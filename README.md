@@ -65,7 +65,6 @@ Finally, describe your request in a dict-like config:
 ```python
 config = {
     "dates": dates,
-    "CMSAF": "cloud_area_fraction",
     "ICON-CH1-EPS": ["U_10M", "V_10M"],
     "SURFACE": "tde200s0",
     "NASADEM": "nasadem",
