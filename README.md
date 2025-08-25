@@ -65,8 +65,10 @@ Finally, describe your request in a dict-like config:
 ```python
 config = {
     "dates": dates,
+    "OPERA": ["TOT_PREC"],
+    "SATELLITE": ["IR_089"],
     "ICON-CH1-EPS": ["U_10M", "V_10M"],
-    "SURFACE": "tde200s0",
+    "SYNOP": "tde200s0",
     "NASADEM": "nasadem",
     }
 ```
