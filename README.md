@@ -1,11 +1,14 @@
-# Weathermart
+# weathermart: the weather data market
 https://weathermart.readthedocs.io/en/latest/
+
+`weathermart` is built on top of existing APIs (EUMETSAT, jretrieve, [meteodata-lab](https://github.com/MeteoSwiss/meteodata-lab.git)...) to provide a centralized interface to various weather data sources. 
 
 ### Requirements
 
 This project uses `uv`, which you can install by running the following command:
-``
-curl -LsSf https://astral.sh/uv/install.sh | sh``
+```
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
 
 With uv ready, run `uv sync --all-extras`. This will install the correct python version and dependencies, the package **with all extras** and `pre-commit`.
 
