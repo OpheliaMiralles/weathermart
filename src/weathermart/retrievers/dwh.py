@@ -57,7 +57,7 @@ class DWHRetriever(BaseRetriever):
     JRETRIEVE_URL = "https://service.meteoswiss.ch/jretrieve/api/v1/"
     JRETRIEVE_TOKEN_ENDPOINT = "https://service.meteoswiss.ch/auth/realms/meteoswiss.ch/protocol/openid-connect/token"
     # supported jretrieve endpoint in uppercase
-    sources = ("SYNOP",)
+    sources = ("SURFACE",)
     crs = "epsg:4326"
     variables = dwh_dic
     # metadata - everything that is not an image dimension
@@ -237,7 +237,7 @@ class DWHRetriever(BaseRetriever):
         Parameters
         ----------
         source : str
-            Source identifier (e.g., 'SYNOP').
+            Source identifier (e.g., 'SURFACE').
         variables : list of tuple of (str, dict)
             List of variable tuples. Each tuple comprises the variable name and associated parameters.
         dates : list of datetime.date or datetime.date
