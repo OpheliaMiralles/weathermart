@@ -18,7 +18,10 @@ from weathermart.base import checktype
 from weathermart.base import variables_metadata
 from weathermart.utils import batched
 
-dwh_dic = {k: [k] for k in variables_metadata[variables_metadata.source == "DWH"].short_name.unique()}
+dwh_dic = {
+    k: [k]
+    for k in variables_metadata[variables_metadata.source == "DWH"].short_name.unique()
+}
 suffixes = {
     "instantaneous": "s0",
     "10min_mean": "z0",
@@ -87,11 +90,15 @@ class DWHRetriever(BaseRetriever):
                 data=b"grant_type=client_credentials",
                 headers={
                     "Authorization": "Basic "
-                    + base64.b64encode(f"{JRETRIEVE_CLIENT_ID}:{JRETRIEVE_CLIENT_SECRET}".encode()).decode()
+                    + base64.b64encode(
+                        f"{JRETRIEVE_CLIENT_ID}:{JRETRIEVE_CLIENT_SECRET}".encode()
+                    ).decode()
                 },
             )
         ) as f:
-            auth_header = "Bearer " + json.loads(f.read().decode("utf-8"))["access_token"]
+            auth_header = (
+                "Bearer " + json.loads(f.read().decode("utf-8"))["access_token"]
+            )
 
         return auth_header
 
@@ -127,9 +134,15 @@ class DWHRetriever(BaseRetriever):
             If the response status code indicates an error.
         """
         url = DWHRetriever.JRETRIEVE_URL + endpoint
-        auth_header = DWHRetriever.retrieve_token(jretrieve_client_id, jretrieve_client_secret)
-        CA_BUNDLE = os.environ.get("REQUESTS_CA_BUNDLE", True) or os.environ.get("CA_BUNDLE", True)
-        with httpx.Client(headers={"Authorization": auth_header}, verify=CA_BUNDLE, timeout=None) as client:
+        auth_header = DWHRetriever.retrieve_token(
+            jretrieve_client_id, jretrieve_client_secret
+        )
+        CA_BUNDLE = os.environ.get("REQUESTS_CA_BUNDLE", True) or os.environ.get(
+            "CA_BUNDLE", True
+        )
+        with httpx.Client(
+            headers={"Authorization": auth_header}, verify=CA_BUNDLE, timeout=None
+        ) as client:
             resp: httpx.Response = client.get(url, params=args)
         resp.raise_for_status()
         return resp
@@ -272,10 +285,14 @@ class DWHRetriever(BaseRetriever):
             If the credentials file does not contain the required keys.
         """
         dates, variables = checktype(dates, variables)
-        possible_suffixes = [s for i, s in suffixes.items() if i in temp_res[temporal_resolution]]
+        possible_suffixes = [
+            s for i, s in suffixes.items() if i in temp_res[temporal_resolution]
+        ]
         if jretrieve_credentials_path is None:
             try:
-                logging.warning("Using JRETRIEVE_CLIENT_ID and JRETRIEVE_CLIENT_SECRET from environment variables.")
+                logging.warning(
+                    "Using JRETRIEVE_CLIENT_ID and JRETRIEVE_CLIENT_SECRET from environment variables."
+                )
                 jretrieve_client_id = os.environ["JRETRIEVE_CLIENT_ID"]
                 jretrieve_client_secret = os.environ["JRETRIEVE_CLIENT_SECRET"]
             except KeyError as e:
@@ -289,7 +306,9 @@ class DWHRetriever(BaseRetriever):
                     credentials = json.load(f)
 
             except FileNotFoundError as e:
-                raise FileNotFoundError(f"JRetrieve credentials file not found at {jretrieve_credentials_path}") from e
+                raise FileNotFoundError(
+                    f"JRetrieve credentials file not found at {jretrieve_credentials_path}"
+                ) from e
             except Exception as e:
                 raise RuntimeError(f"Error reading credentials token file: {e}") from e
             try:
@@ -302,13 +321,17 @@ class DWHRetriever(BaseRetriever):
 
         if len(dates) == 1:
             start = pd.to_datetime(dates).strftime("%Y%m%d%H%M%S")[0]
-            stop = (pd.to_datetime(dates) + pd.to_timedelta("23h50m")).strftime("%Y%m%d%H%M%S")[0]
+            stop = (pd.to_datetime(dates) + pd.to_timedelta("23h50m")).strftime(
+                "%Y%m%d%H%M%S"
+            )[0]
         else:
             isodates = [pd.to_datetime(d).strftime("%Y%m%d%H%M%S") for d in dates]
             start, stop = isodates[0], isodates[-1]
         timerange = "-".join([start, stop])
         jretrieve_variables = sum((self.variables[v] for v, _ in variables), [])
-        jretrieve_variables = [v for v in jretrieve_variables if v[-2:] in possible_suffixes]
+        jretrieve_variables = [
+            v for v in jretrieve_variables if v[-2:] in possible_suffixes
+        ]
         coords_station_df = DWHRetriever.get_jretrieve_stations(
             jretrieve_client_id,
             jretrieve_client_secret,
@@ -324,14 +347,18 @@ class DWHRetriever(BaseRetriever):
                 use_limitation,
             )
         elif use_limitation > 40:
-            raise ValueError(f"use_limitation is set to {use_limitation}, which is higher than 40.")
+            raise ValueError(
+                f"use_limitation is set to {use_limitation}, which is higher than 40."
+            )
 
         to_concat = []
         i = 0
         batches = batched(stations, 500)
         nr_batches = len(list(batched(stations, 500)))
         for s_slice in batches:
-            logging.info("Retrieving data for batch %s/%s of 500 stations", i, nr_batches)
+            logging.info(
+                "Retrieving data for batch %s/%s of 500 stations", i, nr_batches
+            )
             query_args = {
                 "locationIds": ",".join(s_slice),
                 "parameterShortNames": ",".join(jretrieve_variables),

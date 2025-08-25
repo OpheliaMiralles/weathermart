@@ -445,7 +445,7 @@ class DataProvider:
                     )
                 )
                 cached = chunk_data(cached)
-                if pd.date_range(dates[0], dates[-1], freq="D")!=dates_to_retrieve:
+                if pd.date_range(dates[0], dates[-1], freq="D") != dates_to_retrieve:
                     # the cache returned data for the whole day, but we only want specific datetimes
                     all_cached_data.append(cached.sel({time_dim: dates_to_retrieve}))
                 else:

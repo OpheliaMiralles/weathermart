@@ -5,7 +5,7 @@ The weathermart package allows to retrieve data from:
 
 -  **numerical weather prediction** from FDB and grib files
 -  **station observations** via jretrieve (MeteoSwiss internal)
--  **radar data** from the MeteoFrance's OPERA API 
+-  **radar data** from the MeteoFrance's OPERA API
 -  **satellite data** from the EUMETSAT API
 -  **dem raw products** from various sources via url queries.
 
