@@ -1,12 +1,6 @@
 .. highlight:: shell
 
 ============
-Installation
-============
-
-
-This is written for usage on Balfrin.
-============
 Requirements
 ============
 ### Requirements
