@@ -10,8 +10,7 @@ With uv ready, run `uv sync --all-extras`. This will install the correct python 
 
 ### Extras
 
-Some of the dependencies are split up into different extras.
-By default, `install.sh` will install all extras.
+Some of the dependencies are split up into different extras. The extra dependency groups list as follows:
 
 | Source  | `<XYZ>` |
 | -------- | ------- |
