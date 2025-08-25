@@ -1,5 +1,5 @@
-Weathermart
-=============
+weathermart: the weather data market
+====================================
 
 The weathermart package allows to retrieve data from:
 
