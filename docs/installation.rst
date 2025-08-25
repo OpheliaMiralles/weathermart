@@ -3,8 +3,6 @@
 ============
 Requirements
 ============
-### Requirements
-
 This project uses `uv`, which you can install by running the following command:
 ``
 curl -LsSf https://astral.sh/uv/install.sh | sh``
