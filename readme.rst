@@ -64,9 +64,10 @@ Finally, describe your request in a dict-like config:
 
    config = {
        "dates": dates,
-       "CMSAF": "cloud_area_fraction",
+       "OPERA": "TOT_PREC",
+       "SATELLITE": "IR_039",
        "ICON-CH1-EPS": ["U_10M", "V_10M"],
-       "SURFACE": "tre200s0",
+       "SYNOP": "tre200s0",
        "NASADEM": "nasadem",
        }
 
