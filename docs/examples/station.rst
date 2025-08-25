@@ -2,10 +2,9 @@ Station Data
 ============
 
 Station data is retrieved through ``jretrieve`` API, which is an internal MeteoSwiss API.
-You need to have a valid jretrieve credentials file (warning: not an offline token) to access the data.
-Contact the data provider team to get access to the credentials file.
+You need to have a valid jretrieve credentials file (warning: not an offline token) to access the data. Contact the data provider team to get access to the credentials file.
 
-We use use_limitation as main criteria for station selection.
+We use `use_limitation` as main criteria for station selection.
 Default value is 20, which contains the Swiss MetNet stations.
 Maximum value is 40, which contains all stations one is allowed to access.
 Values above 40 raise an Exception.
@@ -34,5 +33,8 @@ Values above 40 raise an Exception.
 
 
 .. image:: ../_static/T_2M_station.png
-    :width: 800
-    :align: center
+    :width: 400
+    :align: left
+.. image:: ../_static/stations.png
+    :width: 400
+    :align: right

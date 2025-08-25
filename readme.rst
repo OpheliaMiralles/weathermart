@@ -67,7 +67,7 @@ Finally, describe your request in a dict-like config:
        "OPERA": "TOT_PREC",
        "SATELLITE": "IR_039",
        "ICON-CH1-EPS": ["U_10M", "V_10M"],
-       "SYNOP": "tre200s0",
+       "SURFACE": "tre200s0",
        "NASADEM": "nasadem",
        }
 

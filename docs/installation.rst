@@ -9,27 +9,27 @@ This is written for usage on Balfrin.
 ============
 Requirements
 ============
-* pyenv: https://github.com/pyenv/pyenv
-* poetry: https://python-poetry.org/docs/
+### Requirements
 
-If you didn't have these tools before, quickly restart your shell to assure poetry can find pyenv.
+This project uses `uv`, which you can install by running the following command:
+``
+curl -LsSf https://astral.sh/uv/install.sh | sh``
 
-With poetry and pyenv ready, run ``./install.sh``. This will install the correct python version including the requirements for ``sqlite3`` and ``lzma``, the poetry package **with all extras** and ``pre-commit``.
-In theory, you can also use the retriever with a python version without ``sqlite3`` and ``lzma`` if you don't plan to use the satellite retriever.
+With uv ready, run `uv sync --all-extras`. This will install the correct python version and dependencies, the package **with all extras** and `pre-commit`.
+
 
 ============
 Extras
 ============
 
 Some of the dependencies are split up into different extras.
-By default, ``install.sh`` will install all extras.
 
 +---------------------------+---------+
 | Source                    | ``<XYZ>`` |
 +===========================+=========+
 | EUMETSAT API              | eumetsat|
 +---------------------------+---------+
-| Radar data (MCH, OPERA)   | radar   |
+| OPERA API                 | radar   |
 +---------------------------+---------+
 | GRIB                      | eccodes |
 +---------------------------+---------+

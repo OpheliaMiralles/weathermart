@@ -32,6 +32,6 @@ The GribRetriever is designed for NPW outputs from a local filesystem on grib2 f
         ensemble_members=0,
     )
 
-    .. image:: ../_static/T_2M.png
+.. image:: ../_static/T_2M.png
     :width: 800
     :align: center
