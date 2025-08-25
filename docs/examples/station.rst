@@ -20,7 +20,7 @@ Values above 40 raise an Exception.
     end = "2023-12-18 23:00"
     provider = default_provider()
     config = {
-        "SURFACE": [
+        "SYNOP": [
             "dkl010z0",
             "fkl010z0",
             "prestas0",
