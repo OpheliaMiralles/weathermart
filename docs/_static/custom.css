@@ -1,130 +1,115 @@
 /* ================================
-   Weathermart "Sky" theme – Less Blue Variant
-   Balance cool sky tones with warm sunrise + neutral slate
+   Weathermart – Gradient TOC panel
    ================================ */
 
-/* Palette overrides */
+/* --- Color tokens for TOC cycling --- */
 :root{
-  /* neutrals */
-  --wm-text: #0f172a;        /* slate-900 */
-  --wm-muted: #475569;       /* slate-600 */
-  --wm-bg: #fdfefe;          /* near white */
-  --wm-surface: #ffffff;
-  --wm-border: #e2e8f0;      /* slate-200 */
+  /* neutral text + borders */
+  --wm-text: #0f172a;         /* slate-900 */
+  --wm-muted: #475569;        /* slate-600 */
+  --wm-border: #e2e8f0;       /* slate-200 */
 
-  /* cool accents (kept, but used sparingly) */
-  --wm-sky-900: #0369a1;     /* deep sky */
-  --wm-rain-600: #0891b2;    /* teal/cyan */
-
-  /* warm accents (new) */
-  --wm-sun-600: #d97706;     /* amber-600 */
-  --wm-sun-500: #f59e0b;     /* amber-500 */
-
-  /* link behavior */
-  --wm-link: #334155;        /* slate-700: neutral by default */
-  --wm-link-hover: var(--wm-rain-600); /* teal on hover */
+  /* 7-stop palette (warm->cool gradient cycle) */
+  --toc-1: #f59e0b; /* amber 500 */
+  --toc-2: #f97316; /* orange 500 */
+  --toc-3: #ef4444; /* red 500 */
+  --toc-4: #a855f7; /* purple 500 */
+  --toc-5: #6366f1; /* indigo 500 */
+  --toc-6: #0ea5e9; /* sky 500 */
+  --toc-7: #14b8a6; /* teal 500 */
 }
 
-/* Background: reduce blue cast */
-html, body{
+/* --- ToC panel: soft background with very light gradient --- */
+.bd-toc{
   background:
-    radial-gradient(900px 360px at 85% -15%, rgba(14,165,233,.06) 0%, transparent 60%),
-    var(--wm-bg);
-  color: var(--wm-text);
-}
-
-/* Headings: split palette to avoid all-blue */
-h1,h2,h3,h4,h5{ font-weight: 800; line-height: 1.2; letter-spacing: -0.01em; margin-top: 1.15em; }
-h1{
-  font-size: 2.05rem;
-  background: linear-gradient(90deg, var(--wm-sky-900), var(--wm-rain-600));
-  -webkit-background-clip: text; background-clip: text; color: transparent;
-}
-h2{ font-size: 1.6rem; color: var(--wm-sun-600); }      /* warm sunrise */
-h3{ font-size: 1.35rem; color: #334155; }               /* storm-slate */
-h4{ font-size: 1.15rem; color: var(--wm-muted); }
-h5{ font-size: 1.0rem;  color: var(--wm-muted); }
-
-/* Links: neutral by default, teal on hover */
-a{
-  color: var(--wm-link);
-  text-decoration: none;
-  transition: color .15s ease, box-shadow .15s ease;
-  border-radius: 4px;
-}
-a:hover, a:focus{ color: var(--wm-link-hover); text-decoration: underline; }
-a:focus-visible{ outline: 3px solid #bae6fd; outline-offset: 2px; }
-
-/* ToC / Sidebar: neutral; colorize only on hover */
-.toctree-l1 .reference,
-.sidebar-primary-item a{
-  color: #475569;  /* slate-600 */
-}
-.toctree-l1 .reference:hover,
-.sidebar-primary-item a:hover,
-.sidebar-primary-item a:focus{
-  color: var(--wm-link-hover);
-}
-
-/* Cards / admonitions: keep neutral surfaces */
-.card, .admonition, .bd-sidebar, .bd-toc, .bd-content .highlight{
-  background: var(--wm-surface);
+    linear-gradient(180deg, #f8fbff 0%, #ffffff 40%, #fffaf5 100%);
   border: 1px solid var(--wm-border);
   border-radius: 14px;
-  box-shadow: 0 4px 10px rgba(51, 65, 85, 0.06); /* subtle slate shadow */
+  padding: 0.75rem 0.75rem 1rem;
 }
 
-/* Admonition marker: use warm-cool stack (small but distinct) */
-.admonition-title{
-  position: relative; padding-left: .8rem; font-weight: 700; color: #334155;
-}
-.admonition-title::before{
-  content:""; position:absolute; left:.4rem; top:50%; transform: translateY(-50%);
-  width:6px; height:6px; border-radius:50%;
-  background: var(--wm-sun-600);
-  box-shadow: 0 -10px 0 0 var(--wm-rain-600), 0 10px 0 0 var(--wm-sky-900);
-}
-
-/* Code blocks: keep faint-sky but less blue */
-pre{
-  background: #f6faff;      /* lighter */
-  border: 1px solid var(--wm-border);
-  border-radius: 12px !important;
-}
-code{
-  background: #f3f7fb;
-  border: 1px solid var(--wm-border);
-  border-radius: 8px;
-}
-
-/* Tables: neutral header */
-th{
-  background: linear-gradient(180deg, #f8fafc, #eef2f6); /* neutral gradient */
-  color: #334155;
-  font-weight: 700;
-}
-
-/* Dark mode: keep cyan but add warm H2 for contrast */
-html[data-theme="dark"]{
-  --wm-bg: #0b1220; --wm-surface:#0f172a; --wm-text:#e5e7eb; --wm-muted:#9aa4b2; --wm-border:#1f2937;
-  --wm-sky-900:#0ea5e9; --wm-rain-600:#22d3ee;
-  --wm-sun-600:#f59e0b; --wm-sun-500:#fbbf24;
-  --wm-link:#cbd5e1; --wm-link-hover:#22d3ee;
-
-  background:
-    radial-gradient(900px 360px at 85% -15%, rgba(34,211,238,.08) 0%, transparent 60%),
-    #0b1220;
-}
-html[data-theme="dark"] h2{ color: var(--wm-sun-500); } /* warm pop on dark */
-html[data-theme="dark"] h3{ color: #cbd5e1; }
-html[data-theme="dark"] .card,
-html[data-theme="dark"] .admonition,
-html[data-theme="dark"] .bd-sidebar,
-html[data-theme="dark"] .bd-toc,
-html[data-theme="dark"] .bd-content .highlight,
-html[data-theme="dark"] pre,
-html[data-theme="dark"] code{
-  background: var(--wm-surface);
-  border-color: var(--wm-border);
+/* Title calmer weight, good hierarchy */
+.bd-toc .toc-title{
+  font-weight: 800;
   color: var(--wm-text);
+  margin: 0.25rem 0 0.25rem 0.25rem;
 }
+
+/* Base link style: not bold by default */
+.bd-toc nav a,
+.bd-toc .reference{
+  font-weight: 500;
+  color: var(--wm-muted);
+  text-decoration: none;
+  display: block;
+  padding: .35rem .55rem .35rem 1.1rem;
+  border-radius: 10px;
+  position: relative;
+  transition: color .15s ease, background-color .15s ease, box-shadow .15s ease;
+}
+
+/* Level-specific subtle sizing and color */
+.bd-toc .toctree-l1 > a{ font-size: 0.98rem; color: var(--wm-text); }
+.bd-toc .toctree-l2 > a{ font-size: 0.95rem; color: #475569; }
+.bd-toc .toctree-l3 > a{ font-size: 0.9rem;  color: #64748b; }
+
+/* Gradient bullet dot (cycles through 7 colors) */
+.bd-toc nav ul > li { --toc: var(--toc-1); } /* default */
+.bd-toc nav ul > li:nth-child(7n+1){ --toc: var(--toc-1); }
+.bd-toc nav ul > li:nth-child(7n+2){ --toc: var(--toc-2); }
+.bd-toc nav ul > li:nth-child(7n+3){ --toc: var(--toc-3); }
+.bd-toc nav ul > li:nth-child(7n+4){ --toc: var(--toc-4); }
+.bd-toc nav ul > li:nth-child(7n+5){ --toc: var(--toc-5); }
+.bd-toc nav ul > li:nth-child(7n+6){ --toc: var(--toc-6); }
+.bd-toc nav ul > li:nth-child(7n+0){ --toc: var(--toc-7); }
+
+.bd-toc nav a::before{
+  content:"";
+  position:absolute; left:.55rem; top:50%;
+  transform: translateY(-50%);
+  width:7px; height:7px; border-radius:50%;
+  background: var(--toc);
+  box-shadow: 0 0 0 0 rgba(0,0,0,0);
+  transition: box-shadow .15s ease;
+}
+
+/* Hover: colorize text and add a soft left “pill” */
+.bd-toc nav a:hover{
+  color: var(--toc);
+  background: linear-gradient(90deg, color-mix(in oklab, var(--toc) 15%, transparent) 0 24%, transparent 24% 100%);
+  box-shadow: inset 3px 0 0 var(--toc);
+}
+@supports not (color-mix(in oklab, red 10%, transparent)){
+  /* fallback without color-mix */
+  .bd-toc nav a:hover{ background: linear-gradient(90deg, rgba(0,0,0,.06) 0 24%, transparent 24% 100%); }
+}
+
+/* Active/current item: slightly stronger pill + semibold */
+.bd-toc nav a.current,
+.bd-toc nav a[aria-current="page"]{
+  color: var(--toc);
+  font-weight: 600;
+  background: linear-gradient(90deg, color-mix(in oklab, var(--toc) 22%, transparent) 0 30%, transparent 30% 100%);
+  box-shadow: inset 4px 0 0 var(--toc);
+}
+
+/* Nested guides (optional): subtle lines to group children */
+.bd-toc .toctree-l2,
+.bd-toc .toctree-l3{
+  border-left: 1px dashed rgba(2,6,23,.08);
+  margin-left: .55rem;
+  padding-left: .35rem;
+}
+
+/* Dark mode adjustments */
+html[data-theme="dark"] .bd-toc{
+  background:
+    linear-gradient(180deg, #0f172a 0%, #0d1424 50%, #16120b 100%);
+  border-color: #1f2937;
+}
+html[data-theme="dark"] .bd-toc .toc-title{ color: #e5e7eb; }
+html[data-theme="dark"] .bd-toc nav a{ color: #cbd5e1; }
+html[data-theme="dark"] .bd-toc .toctree-l2 > a{ color:#a3adc2; }
+html[data-theme="dark"] .bd-toc .toctree-l3 > a{ color:#94a3b8; }
+html[data-theme="dark"] .bd-toc .toctree-l2,
+html[data-theme="dark"] .bd-toc .toctree-l3{ border-left-color: rgba(203,213,225,.16); }

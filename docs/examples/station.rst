@@ -33,8 +33,8 @@ Values above 40 raise an Exception.
 
 
 .. image:: ../_static/T_2M_station.png
-    :width: 450
+    :width: 420
     :align: left
 .. image:: ../_static/stations.png
-    :width: 450
+    :width: 420
     :align: right
