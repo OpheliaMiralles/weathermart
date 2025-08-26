@@ -14,7 +14,6 @@ requires-python = ">=3.10"
 dependencies = [
     "geopandas>=1.0.1",
     "httpx>=0.28.1",
-    "meteodata-lab>=0.4.0",
     "numpy>=1.26.4",
     "omegaconf>=2.3.0",
     "pandas>=2.3.2",
@@ -29,6 +28,7 @@ radar = [
 ]
 eumetsat = ["satpy", "eumdac", "pyresample"]
 dem = ["rioxarray", "pystac-client", "planetary-computer"]
+grib = ["meteodata-lab>=0.4.0", "earthkit>=0.6.0"]
 
 [project.entry-points."weathermart.retriever"]
 GribRetriever = "weathermart.retrievers:GribRetriever"
