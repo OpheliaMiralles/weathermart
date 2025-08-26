@@ -3,6 +3,7 @@
 ============
 Requirements
 ============
+
 This project uses ``uv``, which you can install by running the following command:
 
 .. code-block:: shell

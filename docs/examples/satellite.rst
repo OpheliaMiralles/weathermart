@@ -1,8 +1,5 @@
-Satellite Data
-==============
-
 EUMetsat API
-------------
+============
 
 You can retrieve data directly from the EUMetSat API using the ``EumetsatRetriever`` class.
 This is generally the preferred way to access satellite data, since you get the data from a bigger domain.
