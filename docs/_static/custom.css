@@ -1,219 +1,122 @@
 /* ================================
-   Weathermart Docs – "Sky" theme
-   Subtle weather motif for ML/data docs
+   Weathermart "Sky" theme – Less Blue Variant
+   Balance cool sky tones with warm sunrise + neutral slate
    ================================ */
 
-/* --- Tokens: colors & typography --- */
+/* Palette overrides */
 :root{
-  --font-sans: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", sans-serif;
+  /* neutrals */
+  --wm-text: #0f172a;        /* slate-900 */
+  --wm-muted: #475569;       /* slate-600 */
+  --wm-bg: #fdfefe;          /* near white */
+  --wm-surface: #ffffff;
+  --wm-border: #e2e8f0;      /* slate-200 */
 
-  /* Day palette */
-  --wm-text: #0f172a;              /* slate-900 */
-  --wm-muted: #475569;             /* slate-600 */
-  --wm-bg: #f6fbff;                /* very light sky */
-  --wm-surface: #ffffff;           /* card surface */
-  --wm-border: #e2e8f0;            /* slate-200 */
+  /* cool accents (kept, but used sparingly) */
+  --wm-sky-900: #0369a1;     /* deep sky */
+  --wm-rain-600: #0891b2;    /* teal/cyan */
 
-  /* Weather accents */
-  --wm-sky-700: #0ea5e9;           /* clear-sky blue */
-  --wm-sky-900: #0369a1;           /* deep sky */
-  --wm-rain-600: #0891b2;          /* rain teal */
-  --wm-sun-500: #f59e0b;           /* sunrise accent */
-  --wm-storm-700:#334155;          /* storm slate */
+  /* warm accents (new) */
+  --wm-sun-600: #d97706;     /* amber-600 */
+  --wm-sun-500: #f59e0b;     /* amber-500 */
 
-  --wm-link: var(--wm-rain-600);
-  --wm-link-hover: var(--wm-sky-900);
+  /* link behavior */
+  --wm-link: #334155;        /* slate-700: neutral by default */
+  --wm-link-hover: var(--wm-rain-600); /* teal on hover */
 }
 
-/* --- Base & background --- */
+/* Background: reduce blue cast */
 html, body{
   background:
-    radial-gradient(1200px 600px at 10% -10%, #eaf7ff 0%, transparent 60%),
-    radial-gradient(800px 400px at 80% -20%, #e3f2ff 0%, transparent 55%),
+    radial-gradient(900px 360px at 85% -15%, rgba(14,165,233,.06) 0%, transparent 60%),
     var(--wm-bg);
   color: var(--wm-text);
 }
 
-body{
-  font-family: var(--font-sans);
-  line-height: 1.65;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-/* --- Headings with weather accent --- */
-h1,h2,h3,h4,h5{
-  font-weight: 800;
-  line-height: 1.2;
-  letter-spacing: -0.01em;
-  margin-top: 1.15em;
-}
+/* Headings: split palette to avoid all-blue */
+h1,h2,h3,h4,h5{ font-weight: 800; line-height: 1.2; letter-spacing: -0.01em; margin-top: 1.15em; }
 h1{
   font-size: 2.05rem;
   background: linear-gradient(90deg, var(--wm-sky-900), var(--wm-rain-600));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  -webkit-background-clip: text; background-clip: text; color: transparent;
 }
-h2{ font-size:1.6rem; color: var(--wm-sky-900); }
-h3{ font-size:1.35rem; color: var(--wm-rain-600); }
-h4{ font-size:1.15rem; color: var(--wm-muted); }
-h5{ font-size:1.0rem;  color: var(--wm-muted); }
+h2{ font-size: 1.6rem; color: var(--wm-sun-600); }      /* warm sunrise */
+h3{ font-size: 1.35rem; color: #334155; }               /* storm-slate */
+h4{ font-size: 1.15rem; color: var(--wm-muted); }
+h5{ font-size: 1.0rem;  color: var(--wm-muted); }
 
-/* --- Links --- */
+/* Links: neutral by default, teal on hover */
 a{
   color: var(--wm-link);
   text-decoration: none;
   transition: color .15s ease, box-shadow .15s ease;
+  border-radius: 4px;
 }
-a:hover, a:focus{
-  color: var(--wm-link-hover);
-  text-decoration: underline;
-}
-a:focus-visible{
-  outline: 3px solid #bae6fd; /* sky-200 */
-  outline-offset: 2px; border-radius: 6px;
-}
+a:hover, a:focus{ color: var(--wm-link-hover); text-decoration: underline; }
+a:focus-visible{ outline: 3px solid #bae6fd; outline-offset: 2px; }
 
-/* --- Navbar brand (logo) --- */
-.navbar-brand img{
-  height: auto;
-  max-height: 38px; /* consistent logo height */
-  width: auto;
-}
-
-/* --- Search (pydata-sphinx-theme) --- */
-.bd-search .fa-magnifying-glass{ display:none; }
-.search-button__kbd-shortcut{
-  border-radius: 6px;
-  font-size: .65em;
-  padding: .1rem .35rem;
-  background: var(--wm-surface);
-  border: 1px solid var(--wm-border);
-  color: var(--wm-muted);
-}
-
-/* --- Sidebar & ToC --- */
-.toctree-l1 .reference{
-  color: var(--wm-sky-900);
-}
-.toctree-l1 .reference:hover{ color: var(--wm-rain-600); }
-
+/* ToC / Sidebar: neutral; colorize only on hover */
+.toctree-l1 .reference,
 .sidebar-primary-item a{
-  color: var(--wm-muted);
+  color: #475569;  /* slate-600 */
 }
+.toctree-l1 .reference:hover,
 .sidebar-primary-item a:hover,
 .sidebar-primary-item a:focus{
-  color: var(--wm-sky-900);
+  color: var(--wm-link-hover);
 }
 
-/* --- Cards, admonitions, code blocks: "cloud-soft" --- */
+/* Cards / admonitions: keep neutral surfaces */
 .card, .admonition, .bd-sidebar, .bd-toc, .bd-content .highlight{
   background: var(--wm-surface);
   border: 1px solid var(--wm-border);
-  border-radius: 14px;              /* cloud-soft corners */
-  box-shadow: 0 6px 12px rgba(3, 105, 161, 0.06); /* sky tint */
+  border-radius: 14px;
+  box-shadow: 0 4px 10px rgba(51, 65, 85, 0.06); /* subtle slate shadow */
 }
 
-/* Admonition headers with a raindrop bar */
+/* Admonition marker: use warm-cool stack (small but distinct) */
 .admonition-title{
-  position: relative;
-  padding-left: .8rem;
+  position: relative; padding-left: .8rem; font-weight: 700; color: #334155;
 }
 .admonition-title::before{
-  content:"";
-  position:absolute; left:.4rem; top:50%;
-  transform: translateY(-50%);
-  width:6px; height:6px; border-radius: 50%;
-  background: var(--wm-rain-600);
-  box-shadow:
-    0 -10px 0 0 var(--wm-sky-700),
-    0  10px 0 0 var(--wm-sun-500);
+  content:""; position:absolute; left:.4rem; top:50%; transform: translateY(-50%);
+  width:6px; height:6px; border-radius:50%;
+  background: var(--wm-sun-600);
+  box-shadow: 0 -10px 0 0 var(--wm-rain-600), 0 10px 0 0 var(--wm-sky-900);
 }
 
-/* Code */
-pre, code, kbd, samp{
-  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
-}
+/* Code blocks: keep faint-sky but less blue */
 pre{
-  background: #f1f8ff;              /* faint sky */
+  background: #f6faff;      /* lighter */
   border: 1px solid var(--wm-border);
   border-radius: 12px !important;
-  padding: .85rem 1rem;
-  overflow: auto;
 }
 code{
-  background: #eef6ff;
+  background: #f3f7fb;
   border: 1px solid var(--wm-border);
-  padding: .05rem .35rem;
   border-radius: 8px;
 }
 
-/* --- Tables --- */
-table{
-  border-collapse: collapse; width:100%; background: var(--wm-surface);
-  border: 1px solid var(--wm-border);
-}
-th, td{
-  border-bottom: 1px solid var(--wm-border);
-  padding: .6rem .75rem;
-}
+/* Tables: neutral header */
 th{
-  background: linear-gradient(180deg, #f0f9ff, #e6f3ff);
-  color: var(--wm-storm-700);
+  background: linear-gradient(180deg, #f8fafc, #eef2f6); /* neutral gradient */
+  color: #334155;
   font-weight: 700;
 }
 
-/* --- Buttons / badges --- */
-.btn, .badge, .label{ border-radius: 999px; }
-.btn-primary{
-  background: var(--wm-sky-900);
-  border-color: var(--wm-sky-900);
-}
-.btn-primary:hover{
-  background: var(--wm-rain-600);
-  border-color: var(--wm-rain-600);
-}
-
-/* --- Section scroll offset (for anchored headings) --- */
-.section, .bd-content > div > section{ scroll-margin-top: 5rem; }
-
-/* --- Horizontal rule with "isobar" vibe --- */
-hr{
-  border: 0; height: 10px; margin: 2rem 0;
-  background:
-    repeating-linear-gradient(
-      90deg,
-      rgba(3,105,161,.15) 0 18px,
-      rgba(14,165,233,.15) 18px 36px
-    );
-  border-radius: 999px;
-}
-
-/* --- Dark mode: dusk-to-night --- */
+/* Dark mode: keep cyan but add warm H2 for contrast */
 html[data-theme="dark"]{
-  --wm-bg: #0b1220;           /* deep dusk */
-  --wm-surface: #0f172a;      /* slate-900 */
-  --wm-text: #e5e7eb;         /* slate-200 */
-  --wm-muted: #9aa4b2;        /* slate-400 */
-  --wm-border: #1f2937;       /* slate-800 */
-
-  --wm-sky-700: #38bdf8;      /* brighter sky in dark */
-  --wm-sky-900: #0ea5e9;
-  --wm-rain-600: #22d3ee;     /* cyan-400 */
-  --wm-sun-500: #fbbf24;      /* warmer sunrise */
-  --wm-storm-700:#cbd5e1;     /* slate-300 */
-
-  --wm-link: var(--wm-rain-600);
-  --wm-link-hover: var(--wm-sky-700);
+  --wm-bg: #0b1220; --wm-surface:#0f172a; --wm-text:#e5e7eb; --wm-muted:#9aa4b2; --wm-border:#1f2937;
+  --wm-sky-900:#0ea5e9; --wm-rain-600:#22d3ee;
+  --wm-sun-600:#f59e0b; --wm-sun-500:#fbbf24;
+  --wm-link:#cbd5e1; --wm-link-hover:#22d3ee;
 
   background:
-    radial-gradient(800px 400px at 85% -10%, rgba(56,189,248,.08) 0%, transparent 60%),
-    radial-gradient(1200px 600px at 15% -20%, rgba(34,211,238,.06) 0%, transparent 60%),
+    radial-gradient(900px 360px at 85% -15%, rgba(34,211,238,.08) 0%, transparent 60%),
     #0b1220;
-  --pst-color-on-background: #222832; /* keep theme var for compat */
 }
-
+html[data-theme="dark"] h2{ color: var(--wm-sun-500); } /* warm pop on dark */
+html[data-theme="dark"] h3{ color: #cbd5e1; }
 html[data-theme="dark"] .card,
 html[data-theme="dark"] .admonition,
 html[data-theme="dark"] .bd-sidebar,
@@ -225,10 +128,3 @@ html[data-theme="dark"] code{
   border-color: var(--wm-border);
   color: var(--wm-text);
 }
-
-/* --- Keep/upgrade your original overrides --- */
-.navbar-brand img{ height:auto; max-width: 300px; } /* if needed, remove to use max-height above */
-.bd-search .fa-magnifying-glass{ display:none; }
-.search-button__kbd-shortcut{ border-radius: 6px; font-size: .65em; }
-.toctree-l1 .reference{ color: var(--wm-sky-900); }
-.sidebar-primary-item a{ color: var(--wm-muted); }
