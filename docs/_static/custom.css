@@ -3,36 +3,195 @@ body {
     font-family: "Tahoma", sans-serif;
     color: #333333
 }
-/* Optional: Customize specific parts like headers */
-h1 {color: #f59e0b;
-    font-weight: bold;}
-h5 {color: #ef4444}
-h4 {color: #6366f1}
-h3 {color: #0ea5e9}
-h2 {color: #285c83}
 
-.navbar-brand img {
-    height: auto;
-    max-width: 300px; /
-}
-.bd-search .fa-magnifying-glass {
-    display: none;
-}
-.search-button__kbd-shortcut {
-    border-radius: 4px;
-    font-size: 0.5em;
-}
-.toctree-l1 .reference {
-    color:  #334155; 
-}
+/* --- Tokens: colors & typography --- */
+:root{
+  --font-sans: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", sans-serif;
 
-.sidebar-primary-item a {color: #285c83}
+  /* Day palette */
+  --wm-text: #0f172a;              /* slate-900 */
+  --wm-muted: #475569;             /* slate-600 */
+  --wm-bg: #f6fbff;                /* very light sky */
+  --wm-surface: #ffffff;           /* card surface */
+  --wm-border: #e2e8f0;            /* slate-200 */
 
-html[data-theme="dark"] {
-    background-color: black;
-    --pst-color-on-background: #222832;
+  /* Weather accents */
+  --wm-sky-700: #0ea5e9;           /* clear-sky blue */
+  --wm-sky-900: #285c83;           /* deep sky */
+  --wm-rain-600: #6366f1;          /* rain teal */
+  --wm-sun-500: #f59e0b;           /* sunrise accent */
+  --wm-storm-700:#ef4444;          /* storm slate */
+
+  --wm-link: var(--wm-rain-600);
+  --wm-link-hover: var(--wm-sky-900);
 }
 
+/* --- Base & background --- */
+html, body{
+  background:
+    radial-gradient(1200px 600px at 10% -10%, #eaf7ff 0%, transparent 60%),
+    radial-gradient(800px 400px at 80% -20%, #e3f2ff 0%, transparent 55%),
+    var(--wm-bg);
+  color: var(--wm-text);
+}
+
+body{
+  font-family: var(--font-sans);
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* --- Headings with weather accent --- */
+h1,h2,h3,h4,h5{
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  margin-top: 1.15em;
+}
+h1{
+  font-size: 2.05rem;
+  background: linear-gradient(90deg, var(--wm-sky-900), var(--wm-rain-600));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+h2{ font-size:1.6rem; color: var(--wm-sky-900); }
+h3{ font-size:1.35rem; color: var(--wm-rain-600); }
+h4{ font-size:1.15rem; color: var(--wm-muted); }
+h5{ font-size:1.0rem;  color: var(--wm-muted); }
+
+/* --- Links --- */
+a{
+  color: var(--wm-link);
+  text-decoration: none;
+  transition: color .15s ease, box-shadow .15s ease;
+}
+a:hover, a:focus{
+  color: var(--wm-link-hover);
+  text-decoration: underline;
+}
+a:focus-visible{
+  outline: 3px solid #bae6fd; /* sky-200 */
+  outline-offset: 2px; border-radius: 6px;
+}
+
+/* --- Navbar brand (logo) --- */
+.navbar-brand img{
+  height: auto;
+  max-height: 38px; /* consistent logo height */
+  width: auto;
+}
+
+/* --- Search (pydata-sphinx-theme) --- */
+.bd-search .fa-magnifying-glass{ display:none; }
+.search-button__kbd-shortcut{
+  border-radius: 6px;
+  font-size: .65em;
+  padding: .1rem .35rem;
+  background: var(--wm-surface);
+  border: 1px solid var(--wm-border);
+  color: var(--wm-muted);
+}
+
+/* --- Sidebar & ToC --- */
+.toctree-l1 .reference{
+  color: var(--wm-sky-900);
+}
+.toctree-l1 .reference:hover{ color: var(--wm-rain-600); }
+
+.sidebar-primary-item a{
+  color: var(--wm-muted);
+}
+.sidebar-primary-item a:hover,
+.sidebar-primary-item a:focus{
+  color: var(--wm-sky-900);
+}
+
+/* --- Cards, admonitions, code blocks: "cloud-soft" --- */
+.card, .admonition, .bd-sidebar, .bd-toc, .bd-content .highlight{
+  background: var(--wm-surface);
+  border: 1px solid var(--wm-border);
+  border-radius: 14px;              /* cloud-soft corners */
+  box-shadow: 0 6px 12px rgba(3, 105, 161, 0.06); /* sky tint */
+}
+
+/* Admonition headers with a raindrop bar */
+.admonition-title{
+  position: relative;
+  padding-left: .8rem;
+}
+.admonition-title::before{
+  content:"";
+  position:absolute; left:.4rem; top:50%;
+  transform: translateY(-50%);
+  width:6px; height:6px; border-radius: 50%;
+  background: var(--wm-rain-600);
+  box-shadow:
+    0 -10px 0 0 var(--wm-sky-700),
+    0  10px 0 0 var(--wm-sun-500);
+}
+
+/* Code */
+pre, code, kbd, samp{
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+}
+pre{
+  background: #f1f8ff;              /* faint sky */
+  border: 1px solid var(--wm-border);
+  border-radius: 12px !important;
+  padding: .85rem 1rem;
+  overflow: auto;
+}
+code{
+  background: #eef6ff;
+  border: 1px solid var(--wm-border);
+  padding: .05rem .35rem;
+  border-radius: 8px;
+}
+
+/* --- Tables --- */
+table{
+  border-collapse: collapse; width:100%; background: var(--wm-surface);
+  border: 1px solid var(--wm-border);
+}
+th, td{
+  border-bottom: 1px solid var(--wm-border);
+  padding: .6rem .75rem;
+}
+th{
+  background: linear-gradient(180deg, #f0f9ff, #e6f3ff);
+  color: var(--wm-storm-700);
+  font-weight: 700;
+}
+
+/* --- Buttons / badges --- */
+.btn, .badge, .label{ border-radius: 999px; }
+.btn-primary{
+  background: var(--wm-sky-900);
+  border-color: var(--wm-sky-900);
+}
+.btn-primary:hover{
+  background: var(--wm-rain-600);
+  border-color: var(--wm-rain-600);
+}
+
+/* --- Section scroll offset (for anchored headings) --- */
+.section, .bd-content > div > section{ scroll-margin-top: 5rem; }
+
+/* --- Horizontal rule with "isobar" vibe --- */
+hr{
+  border: 0; height: 10px; margin: 2rem 0;
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(3,105,161,.15) 0 18px,
+      rgba(14,165,233,.15) 18px 36px
+    );
+  border-radius: 999px;
+}
+
+/* --- Dark mode: dusk-to-night --- */
 html[data-theme="dark"]{
   --wm-bg: #0b1220;           /* deep dusk */
   --wm-surface: #0f172a;      /* slate-900 */
@@ -68,57 +227,10 @@ html[data-theme="dark"] code{
   color: var(--wm-text);
 }
 
-table{
-  border-collapse: collapse; width:100%; background: var(--wm-surface);
-  border: 1px solid var(--wm-border);
-}
-th, td{
-  border-bottom: 1px solid var(--wm-border);
-  padding: .6rem .75rem;
-}
-th{
-  background: linear-gradient(180deg, #f0f9ff, #e6f3ff);
-  color: var(--wm-storm-700);
-  font-weight: 700;
-}
+/* --- Keep/upgrade your original overrides --- */
+.navbar-brand img{ height:auto; max-width: 300px; } /* if needed, remove to use max-height above */
+.bd-search .fa-magnifying-glass{ display:none; }
+.search-button__kbd-shortcut{ border-radius: 6px; font-size: .65em; }
+.toctree-l1 .reference{ color: var(--wm-sky-900); }
+.sidebar-primary-item a{ color: var(--wm-muted); }
 
-pre, code, kbd, samp{
-  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
-}
-pre{
-  background: #f1f8ff;              /* faint sky */
-  border: 1px solid var(--wm-border);
-  border-radius: 12px !important;
-  padding: .85rem 1rem;
-  overflow: auto;
-}
-code{
-  background: #eef6ff;
-  border: 1px solid var(--wm-border);
-  padding: .05rem .35rem;
-  border-radius: 8px;
-}
-
-/* --- Links --- */
-a{
-  color: var(--wm-link);
-  text-decoration: none;
-  transition: color .15s ease, box-shadow .15s ease;
-}
-a:hover, a:focus{
-  color: var(--wm-link-hover);
-  text-decoration: underline;
-}
-a:focus-visible{
-  outline: 3px solid #bae6fd; /* sky-200 */
-  outline-offset: 2px; border-radius: 6px;
-}
-
-/* --- Base & background --- */
-html, body{
-  background:
-    radial-gradient(1200px 600px at 10% -10%, #eaf7ff 0%, transparent 60%),
-    radial-gradient(800px 400px at 80% -20%, #e3f2ff 0%, transparent 55%),
-    var(--wm-bg);
-  color: var(--wm-text);
-}
