@@ -99,3 +99,12 @@ the `example.py <example.py>`__ file:
 The provider will loop through the cache and the retrievers’ available
 sources to get data. It also should save every missing data field in the
 cache.
+
+
+Contributors
+============
+If you'd like to contribute or have any question, please reach out to one of us:
+
+- Ophélia Miralles @ opheliamiralles@gmail.com
+- Leonard Knirsch @ Leonard.Knirsch@meteoswiss.ch
+- Verena Bessenbacher @ Verena.Bessenbacher@meteoswiss.ch
