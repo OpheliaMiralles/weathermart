@@ -1,115 +1,124 @@
-/* ================================
-   Weathermart – Gradient TOC panel
-   ================================ */
+/* Change the font family */
+body {
+    font-family: "Tahoma", sans-serif;
+    color: #333333
+}
+/* Optional: Customize specific parts like headers */
+h1 {color: #f59e0b;
+    font-weight: bold;}
+h5 {color: #ef4444}
+h4 {color: #6366f1}
+h3 {color: #0ea5e9}
+h2 {color: #285c83}
 
-/* --- Color tokens for TOC cycling --- */
-:root{
-  /* neutral text + borders */
-  --wm-text: #0f172a;         /* slate-900 */
-  --wm-muted: #475569;        /* slate-600 */
-  --wm-border: #e2e8f0;       /* slate-200 */
-
-  /* 7-stop palette (warm->cool gradient cycle) */
-  --toc-1: #f59e0b; /* amber 500 */
-  --toc-2: #f97316; /* orange 500 */
-  --toc-3: #ef4444; /* red 500 */
-  --toc-4: #a855f7; /* purple 500 */
-  --toc-5: #6366f1; /* indigo 500 */
-  --toc-6: #0ea5e9; /* sky 500 */
-  --toc-7: #14b8a6; /* teal 500 */
+.navbar-brand img {
+    height: auto;
+    max-width: 300px; /
+}
+.bd-search .fa-magnifying-glass {
+    display: none;
+}
+.search-button__kbd-shortcut {
+    border-radius: 4px;
+    font-size: 0.5em;
+}
+.toctree-l1 .reference {
+    color:  #334155; 
 }
 
-/* --- ToC panel: soft background with very light gradient --- */
-.bd-toc{
+.sidebar-primary-item a {color: #285c83}
+
+html[data-theme="dark"] {
+    background-color: black;
+    --pst-color-on-background: #222832;
+}
+
+html[data-theme="dark"]{
+  --wm-bg: #0b1220;           /* deep dusk */
+  --wm-surface: #0f172a;      /* slate-900 */
+  --wm-text: #e5e7eb;         /* slate-200 */
+  --wm-muted: #9aa4b2;        /* slate-400 */
+  --wm-border: #1f2937;       /* slate-800 */
+
+  --wm-sky-700: #38bdf8;      /* brighter sky in dark */
+  --wm-sky-900: #0ea5e9;
+  --wm-rain-600: #22d3ee;     /* cyan-400 */
+  --wm-sun-500: #fbbf24;      /* warmer sunrise */
+  --wm-storm-700:#cbd5e1;     /* slate-300 */
+
+  --wm-link: var(--wm-rain-600);
+  --wm-link-hover: var(--wm-sky-700);
+
   background:
-    linear-gradient(180deg, #f8fbff 0%, #ffffff 40%, #fffaf5 100%);
-  border: 1px solid var(--wm-border);
-  border-radius: 14px;
-  padding: 0.75rem 0.75rem 1rem;
+    radial-gradient(800px 400px at 85% -10%, rgba(56,189,248,.08) 0%, transparent 60%),
+    radial-gradient(1200px 600px at 15% -20%, rgba(34,211,238,.06) 0%, transparent 60%),
+    #0b1220;
+  --pst-color-on-background: #222832; /* keep theme var for compat */
 }
 
-/* Title calmer weight, good hierarchy */
-.bd-toc .toc-title{
-  font-weight: 800;
+html[data-theme="dark"] .card,
+html[data-theme="dark"] .admonition,
+html[data-theme="dark"] .bd-sidebar,
+html[data-theme="dark"] .bd-toc,
+html[data-theme="dark"] .bd-content .highlight,
+html[data-theme="dark"] pre,
+html[data-theme="dark"] code{
+  background: var(--wm-surface);
+  border-color: var(--wm-border);
   color: var(--wm-text);
-  margin: 0.25rem 0 0.25rem 0.25rem;
 }
 
-/* Base link style: not bold by default */
-.bd-toc nav a,
-.bd-toc .reference{
-  font-weight: 500;
-  color: var(--wm-muted);
+table{
+  border-collapse: collapse; width:100%; background: var(--wm-surface);
+  border: 1px solid var(--wm-border);
+}
+th, td{
+  border-bottom: 1px solid var(--wm-border);
+  padding: .6rem .75rem;
+}
+th{
+  background: linear-gradient(180deg, #f0f9ff, #e6f3ff);
+  color: var(--wm-storm-700);
+  font-weight: 700;
+}
+
+pre, code, kbd, samp{
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+}
+pre{
+  background: #f1f8ff;              /* faint sky */
+  border: 1px solid var(--wm-border);
+  border-radius: 12px !important;
+  padding: .85rem 1rem;
+  overflow: auto;
+}
+code{
+  background: #eef6ff;
+  border: 1px solid var(--wm-border);
+  padding: .05rem .35rem;
+  border-radius: 8px;
+}
+
+/* --- Links --- */
+a{
+  color: var(--wm-link);
   text-decoration: none;
-  display: block;
-  padding: .35rem .55rem .35rem 1.1rem;
-  border-radius: 10px;
-  position: relative;
-  transition: color .15s ease, background-color .15s ease, box-shadow .15s ease;
+  transition: color .15s ease, box-shadow .15s ease;
+}
+a:hover, a:focus{
+  color: var(--wm-link-hover);
+  text-decoration: underline;
+}
+a:focus-visible{
+  outline: 3px solid #bae6fd; /* sky-200 */
+  outline-offset: 2px; border-radius: 6px;
 }
 
-/* Level-specific subtle sizing and color */
-.bd-toc .toctree-l1 > a{ font-size: 0.98rem; color: var(--wm-text); }
-.bd-toc .toctree-l2 > a{ font-size: 0.95rem; color: #475569; }
-.bd-toc .toctree-l3 > a{ font-size: 0.9rem;  color: #64748b; }
-
-/* Gradient bullet dot (cycles through 7 colors) */
-.bd-toc nav ul > li { --toc: var(--toc-1); } /* default */
-.bd-toc nav ul > li:nth-child(7n+1){ --toc: var(--toc-1); }
-.bd-toc nav ul > li:nth-child(7n+2){ --toc: var(--toc-2); }
-.bd-toc nav ul > li:nth-child(7n+3){ --toc: var(--toc-3); }
-.bd-toc nav ul > li:nth-child(7n+4){ --toc: var(--toc-4); }
-.bd-toc nav ul > li:nth-child(7n+5){ --toc: var(--toc-5); }
-.bd-toc nav ul > li:nth-child(7n+6){ --toc: var(--toc-6); }
-.bd-toc nav ul > li:nth-child(7n+0){ --toc: var(--toc-7); }
-
-.bd-toc nav a::before{
-  content:"";
-  position:absolute; left:.55rem; top:50%;
-  transform: translateY(-50%);
-  width:7px; height:7px; border-radius:50%;
-  background: var(--toc);
-  box-shadow: 0 0 0 0 rgba(0,0,0,0);
-  transition: box-shadow .15s ease;
-}
-
-/* Hover: colorize text and add a soft left “pill” */
-.bd-toc nav a:hover{
-  color: var(--toc);
-  background: linear-gradient(90deg, color-mix(in oklab, var(--toc) 15%, transparent) 0 24%, transparent 24% 100%);
-  box-shadow: inset 3px 0 0 var(--toc);
-}
-@supports not (color-mix(in oklab, red 10%, transparent)){
-  /* fallback without color-mix */
-  .bd-toc nav a:hover{ background: linear-gradient(90deg, rgba(0,0,0,.06) 0 24%, transparent 24% 100%); }
-}
-
-/* Active/current item: slightly stronger pill + semibold */
-.bd-toc nav a.current,
-.bd-toc nav a[aria-current="page"]{
-  color: var(--toc);
-  font-weight: 600;
-  background: linear-gradient(90deg, color-mix(in oklab, var(--toc) 22%, transparent) 0 30%, transparent 30% 100%);
-  box-shadow: inset 4px 0 0 var(--toc);
-}
-
-/* Nested guides (optional): subtle lines to group children */
-.bd-toc .toctree-l2,
-.bd-toc .toctree-l3{
-  border-left: 1px dashed rgba(2,6,23,.08);
-  margin-left: .55rem;
-  padding-left: .35rem;
-}
-
-/* Dark mode adjustments */
-html[data-theme="dark"] .bd-toc{
+/* --- Base & background --- */
+html, body{
   background:
-    linear-gradient(180deg, #0f172a 0%, #0d1424 50%, #16120b 100%);
-  border-color: #1f2937;
+    radial-gradient(1200px 600px at 10% -10%, #eaf7ff 0%, transparent 60%),
+    radial-gradient(800px 400px at 80% -20%, #e3f2ff 0%, transparent 55%),
+    var(--wm-bg);
+  color: var(--wm-text);
 }
-html[data-theme="dark"] .bd-toc .toc-title{ color: #e5e7eb; }
-html[data-theme="dark"] .bd-toc nav a{ color: #cbd5e1; }
-html[data-theme="dark"] .bd-toc .toctree-l2 > a{ color:#a3adc2; }
-html[data-theme="dark"] .bd-toc .toctree-l3 > a{ color:#94a3b8; }
-html[data-theme="dark"] .bd-toc .toctree-l2,
-html[data-theme="dark"] .bd-toc .toctree-l3{ border-left-color: rgba(203,213,225,.16); }
