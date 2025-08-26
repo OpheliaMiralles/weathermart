@@ -88,18 +88,15 @@ a:focus-visible{
 
 /* --- Sidebar & ToC --- */
 .toctree-l1 .reference{
-  color: var(--wm-sky-900);
+  color: var(--wm-sky-700);
 }
+.toctree-l2 .reference{color: var(--wm-rain-600);}
+.toctree-l3 .reference{color: var(--wm-sun-500);}
+.toctree-l4 .reference{color: var(--wm-storm-700);}
 .toctree-l1 .reference:hover{ color: var(--wm-sky-700); }
 
 .sidebar-primary-item a{
   color: var(--wm-rain-600);
-}
-.sidebar-secondary-item a{
-  color: var(--wm-sun-500);
-}
-.sidebar-primary-item:nth-child(3) a {
-  color: var(--wm-storm-700);
 }
 .sidebar-primary-item a:hover,
 .sidebar-primary-item a:focus{
