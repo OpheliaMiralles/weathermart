@@ -3,7 +3,7 @@ Numerical Weather Model Prediction Data
 
 From grib files
 ----------------
-The GribRetriever is designed for NPW outputs from a local filesystem on grib2 format. They can contain vertical levels and ensemble members, and can be either analysis or forecast data.
+The GribRetriever is designed for NPW outputs from a local filesystem in ``grib`` format. They can contain vertical levels and ensemble members, and can be either analysis or forecast data.
 
 .. code-block:: python
 
