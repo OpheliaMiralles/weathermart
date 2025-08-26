@@ -1,7 +1,7 @@
 # weathermart: the weather data market
 https://weathermart.readthedocs.io/en/latest/
 
-`weathermart` is built on top of existing APIs (EUMETSAT, jretrieve, [meteodata-lab](https://github.com/MeteoSwiss/meteodata-lab.git)...) to provide a centralized interface to various weather data sources. 
+`weathermart` is built on top of existing APIs (EUMETSAT, jretrieve, [meteodata-lab](https://github.com/MeteoSwiss/meteodata-lab.git)...) to provide a centralized interface to various weather data sources.
 
 ### Requirements
 
@@ -35,7 +35,7 @@ The data-provider package allows to retrieve data from:
 
 The retrievers can be accessed _individually_ or via the InputProvider, where data is _read from a cache_ before trying to retrieve. Available variables and their mapping to their original name are listed in the "variables" attribute of each retriever. To retrieve data (e.g. "U_10M") from a particular source (e.g. COSMO-1E) for given dates (e.g. 2021-01-01) you can call:
 ```python
-ds=GribRetriever().retrieve("COSMO-1E", "U_10M", pd.to_datetime("2021-01-01"))
+ds = GribRetriever().retrieve("COSMO-1E", "U_10M", pd.to_datetime("2021-01-01"))
 ```
 
 If you want to retrieve data from several data sources (e.g. wind from COSMO1E, temperature from station observations) for the same time period, you might as well create an DataProvider and perform the following steps.
@@ -62,6 +62,7 @@ provider = DataProvider(cache)
 You can also use directly the default data provider. It will use by default all of the retrievers to request the desired data.
 ```python
 from weathermart.default_provider import default_provider
+
 provider = default_provider()
 ```
 
@@ -74,7 +75,7 @@ config = {
     "ICON-CH1-EPS": ["U_10M", "V_10M"],
     "SYNOP": "tde200s0",
     "NASADEM": "nasadem",
-    }
+}
 ```
 
 and call the provider from config:
@@ -89,7 +90,12 @@ import numpy as np
 from weathermart.default_provider import default_provider
 
 provider = default_provider()
-config = {"ICON-CH1-EPS": ["CLCT", "TOT_PREC", "U_10M", "V_10M", "QV_2M", "T_2M", "P", "SP"], "dates": pd.date_range("2023-08-01", "2024-09-09")}
-provider.provide_from_config(config, datatype="forecast", ensemble_members=0, step_hours=np.arange(1,13))
+config = {
+    "ICON-CH1-EPS": ["CLCT", "TOT_PREC", "U_10M", "V_10M", "QV_2M", "T_2M", "P", "SP"],
+    "dates": pd.date_range("2023-08-01", "2024-09-09"),
+}
+provider.provide_from_config(
+    config, datatype="forecast", ensemble_members=0, step_hours=np.arange(1, 13)
+)
 ```
 The provider will loop through the cache and the retrievers' available sources to get data. It also should save every missing data field in the cache.

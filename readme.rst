@@ -18,7 +18,7 @@ source (e.g. COSMO-1E) for given dates (e.g. 2021-01-01) you can call:
 
 .. code:: python
 
-   ds=NWPRetriever().retrieve("COSMO-1E", "U_10M", pd.to_datetime("2021-01-01"))
+   ds = NWPRetriever().retrieve("COSMO-1E", "U_10M", pd.to_datetime("2021-01-01"))
 
 If you want to retrieve data from several data sources (e.g. wind from
 COSMO1E, temperature from station observations) for the same time
@@ -56,6 +56,7 @@ request the desired data.
 .. code:: python
 
    from data_provider.default_provider import default_provider
+
    provider = default_provider()
 
 Finally, describe your request in a dict-like config:
@@ -69,7 +70,7 @@ Finally, describe your request in a dict-like config:
        "ICON-CH1-EPS": ["U_10M", "V_10M"],
        "SURFACE": "tre200s0",
        "NASADEM": "nasadem",
-       }
+   }
 
 and call the provider from config:
 
@@ -87,8 +88,13 @@ the `example.py <example.py>`__ file:
    from weathermart.default_provider import default_provider
 
    provider = default_provider()
-   config = {"ICON-CH1-EPS": ["CLCT", "TOT_PREC", "U_10M", "V_10M", "QV_2M", "T_2M", "P", "SP"], "dates": pd.date_range("2023-08-01", "2024-09-09")}
-   provider.provide_from_config(config, data_type="forecast", ensemble_members=0, step_hours=np.arange(1,13))
+   config = {
+       "ICON-CH1-EPS": ["CLCT", "TOT_PREC", "U_10M", "V_10M", "QV_2M", "T_2M", "P", "SP"],
+       "dates": pd.date_range("2023-08-01", "2024-09-09"),
+   }
+   provider.provide_from_config(
+       config, data_type="forecast", ensemble_members=0, step_hours=np.arange(1, 13)
+   )
 
 The provider will loop through the cache and the retrievers’ available
 sources to get data. It also should save every missing data field in the

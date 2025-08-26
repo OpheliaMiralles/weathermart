@@ -42,6 +42,7 @@ EumetsatRetriever = "weathermart.retrievers:EumetsatRetriever"
 
 [dependency-groups]
 dev = [
+    "blacken-docs>=1.19.1",
     "pre-commit>=4.3.0",
     "pytest>=8.4.1",
     "ruff>=0.12.10",

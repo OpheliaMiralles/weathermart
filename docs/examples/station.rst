@@ -19,17 +19,12 @@ Values above 40 raise an Exception.
     end = "2023-12-18 23:00"
     provider = default_provider()
     config = {
-        "SURFACE": [
-            "dkl010z0",
-            "fkl010z0",
-            "prestas0",
-            "rre150z0",
-            "tde200s0",
-            "tde200s0"
-        ],
+        "SURFACE": ["dkl010z0", "fkl010z0", "prestas0", "rre150z0", "tde200s0", "tde200s0"],
         "dates": pd.date_range(start, end),
     }
-    provider.provide_from_config(config, use_limitation=30, jretrieve_credentials_path="<path_to_creds>")
+    provider.provide_from_config(
+        config, use_limitation=30, jretrieve_credentials_path="<path_to_creds>"
+    )
 
 
 .. image:: ../_static/T_2M_station.png
