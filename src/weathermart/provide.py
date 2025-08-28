@@ -449,7 +449,9 @@ class DataProvider:
                     )
                 )
                 cached = chunk_data(cached)
-                if len(pd.date_range(dates[0], dates[-1], freq="D")) != len(dates_to_retrieve):
+                if len(pd.date_range(dates[0], dates[-1], freq="D")) != len(
+                    dates_to_retrieve
+                ):
                     # the cache returned data for the whole day, but we only want specific datetimes
                     all_cached_data.append(cached.sel({time_dim: dates_to_retrieve}))
                 else:
@@ -485,7 +487,9 @@ class DataProvider:
                             kwargs_str=self.get_kwargs_str(kwargs),
                         )
                     except PermissionError:
-                        logging.warning("Cache directory is read-only. Data will not be saved to cache.")
+                        logging.warning(
+                            "Cache directory is read-only. Data will not be saved to cache."
+                        )
 
         # Merge all datasets
         time_dim = (
