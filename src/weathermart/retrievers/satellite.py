@@ -223,7 +223,7 @@ class EumetsatRetriever(BaseRetriever):
                 return ds_list
 
             with TemporaryDirectory() as tmpdir:
-                with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                with ThreadPoolExecutor(max_workers=5) as executor:
                     futures = [
                         executor.submit(download, product, tmpdir)
                         for product in products
@@ -265,7 +265,7 @@ class EumetsatRetriever(BaseRetriever):
             logging.debug("Maximum MSG selected: %d", max_msg)
             products = [p for p in products if int(p.satellite[3]) == max_msg]
             # download the data
-            with dask.config.set(num_workers=max_workers):
+            with dask.config.set(num_workers=4):
                 ds = download_and_resample(products, variables)
             ds_list.append(ds)
 

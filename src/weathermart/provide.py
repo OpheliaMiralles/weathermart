@@ -427,13 +427,17 @@ class DataProvider:
                 ",".join([v[0] for v in variables]),
                 date,
             )
-            cached, missing_vars = self.cache.provide(
-                source.lower(),
-                variables,
-                date,
-                is_static=is_static,
-                kwargs_str=self.get_kwargs_str(kwargs),
-            )
+            if self.cache is not None:
+                cached, missing_vars = self.cache.provide(
+                    source.lower(),
+                    variables,
+                    date,
+                    is_static=is_static,
+                    kwargs_str=self.get_kwargs_str(kwargs),
+                )
+            else:
+                cached = xr.Dataset()
+                missing_vars = variables
             if len(cached) > 0:
                 time_dim = (
                     "time"
@@ -445,7 +449,7 @@ class DataProvider:
                     )
                 )
                 cached = chunk_data(cached)
-                if pd.date_range(dates[0], dates[-1], freq="D") != dates_to_retrieve:
+                if len(pd.date_range(dates[0], dates[-1], freq="D")) != len(dates_to_retrieve):
                     # the cache returned data for the whole day, but we only want specific datetimes
                     all_cached_data.append(cached.sel({time_dim: dates_to_retrieve}))
                 else:
@@ -470,19 +474,18 @@ class DataProvider:
                 )
                 new_data = chunk_data(new_data)
                 all_cached_data.append(new_data)
-                try:
-                    self.cache.save(
-                        new_data,
-                        source,
-                        missing_vars,
-                        date,
-                        is_static=is_static,
-                        kwargs_str=self.get_kwargs_str(kwargs),
-                    )
-                except PermissionError:
-                    logging.warning(
-                        "Cache directory is read-only. Data will not be saved to cache."
-                    )
+                if self.cache is not None:
+                    try:
+                        self.cache.save(
+                            new_data,
+                            source,
+                            missing_vars,
+                            date,
+                            is_static=is_static,
+                            kwargs_str=self.get_kwargs_str(kwargs),
+                        )
+                    except PermissionError:
+                        logging.warning("Cache directory is read-only. Data will not be saved to cache.")
 
         # Merge all datasets
         time_dim = (
