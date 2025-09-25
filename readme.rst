@@ -4,13 +4,13 @@ weathermart: the weather data market
 The weathermart package allows to retrieve data from:
 
 -  **numerical weather prediction** from FDB and grib files
--  **station observations** via jretrieve (MeteoSwiss internal)
+-  **station observations** via jretrieve (MeteoSwiss/DWD internal but can be mimicked for similar apis)
 -  **radar data** from the MeteoFrance's OPERA API
 -  **satellite data** from the EUMETSAT API
 -  **dem raw products** from various sources via url queries.
 
 The retrievers can be accessed *individually* or via the InputProvider,
-where data is *read from a cache on balfrin* before trying to retrieve.
+where data is *read from a local archive* before trying to retrieve.
 Available variables and their mapping to their original name are listed
 in the “variables” attribute of each retriever. To retrieve data
 (e.g. “U_10M” -originally called “northward_wind”) from a particular
