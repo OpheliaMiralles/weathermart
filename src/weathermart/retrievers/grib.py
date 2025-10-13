@@ -146,7 +146,7 @@ class GribRetriever(BaseRetriever):
         if not all(75 <= lev <= 80 for lev in levels) and not all(
             t in ["ANA", "FG"] for t in datatypes
         ):
-            raise ValueError("Only levels 75 to 80 are supported for forecast data.")
+            logging.warning("Only vertical levels 75 to 80 are supported for forecast data. Levels input: %s", levels)
         ensemble_members = (
             [ensemble_members]
             if isinstance(ensemble_members, str | int | type(None))
@@ -197,7 +197,7 @@ class GribRetriever(BaseRetriever):
         def open_and_process_data(all_paths: list[pathlib.Path]) -> xr.Dataset:
             try:
                 fds = data_source.FileDataSource(datafiles=[str(p) for p in all_paths])
-                vars_on_vertical_levels = ["U", "V", "T", "QV", "P"]
+                vars_on_vertical_levels = ["U", "V", "T", "QV", "P", "W_SO", "T_SO", "WSHEAR_DIFF"]
                 non_vert_params = list(
                     set(self.requested_variables).difference(
                         set(vars_on_vertical_levels)
@@ -225,13 +225,24 @@ class GribRetriever(BaseRetriever):
                         )
                     )
                 for var, da in dic.items():
-                    if "z" in da.dims and da.sizes["z"] == 1:
-                        dic[var] = da.squeeze("z", drop=True)
-                    elif "z" in da.dims and da.sizes["z"] > 1:
-                        dic[var] = da.rename({"z": da.attrs["vcoord_type"]})
-                    if "eps" in da.dims and da.sizes["eps"] == 1:
-                        dic[var] = da.squeeze("eps", drop=True)
+                    arr = da
+                    if "z" in arr.dims and arr.sizes["z"] == 1:
+                        # Robustly drop singleton vertical dim and any leftover coord
+                        arr = arr.isel(z=0, drop=True)
+                        if "z" in arr.coords:
+                            arr = arr.drop_vars("z", errors="ignore")
+                    elif "z" in arr.dims and arr.sizes["z"] > 1:
+                        # Rename vertical dim to vcoord_type (e.g. 'height', 'pressure')
+                        vdim = arr.attrs.get("vcoord_type", "z")
+                        arr = arr.rename({"z": vdim})
+                    if "eps" in arr.dims and arr.sizes["eps"] == 1:
+                        arr = arr.isel(eps=0, drop=True)
+                        if "eps" in arr.coords:
+                            arr = arr.drop_vars("eps", errors="ignore")
+                    dic[var] = arr
                 ds = xr.merge([dic[p].rename(p) for p in dic])
+                # Extra guard: squeeze any remaining length-1 dims
+                ds = ds.squeeze(drop=True)
             except ValueError as exc:
                 raise ValueError("Could not retrieve data.") from exc
             name_mapping = {
