@@ -146,7 +146,10 @@ class GribRetriever(BaseRetriever):
         if not all(75 <= lev <= 80 for lev in levels) and not all(
             t in ["ANA", "FG"] for t in datatypes
         ):
-            logging.warning("Only vertical levels 75 to 80 are supported for forecast data. Levels input: %s", levels)
+            logging.warning(
+                "Only vertical levels 75 to 80 are supported for forecast data. Levels input: %s",
+                levels,
+            )
         ensemble_members = (
             [ensemble_members]
             if isinstance(ensemble_members, str | int | type(None))
@@ -197,7 +200,16 @@ class GribRetriever(BaseRetriever):
         def open_and_process_data(all_paths: list[pathlib.Path]) -> xr.Dataset:
             try:
                 fds = data_source.FileDataSource(datafiles=[str(p) for p in all_paths])
-                vars_on_vertical_levels = ["U", "V", "T", "QV", "P", "W_SO", "T_SO", "WSHEAR_DIFF"]
+                vars_on_vertical_levels = [
+                    "U",
+                    "V",
+                    "T",
+                    "QV",
+                    "P",
+                    "W_SO",
+                    "T_SO",
+                    "WSHEAR_DIFF",
+                ]
                 non_vert_params = list(
                     set(self.requested_variables).difference(
                         set(vars_on_vertical_levels)

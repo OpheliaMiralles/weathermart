@@ -418,9 +418,9 @@ class DataProvider:
         all_cached_data = []
 
         for date in pd.date_range(dates[0], dates[-1], freq="D"):
-            dates_to_retrieve = sorted([
-                d for d in dates if pd.to_datetime(d).date() == date.date()
-            ])
+            dates_to_retrieve = sorted(
+                [d for d in dates if pd.to_datetime(d).date() == date.date()]
+            )
             logging.info(
                 "Reading %s %s data from cache for %s",
                 source,
@@ -449,11 +449,13 @@ class DataProvider:
                     )
                 )
                 cached = chunk_data(cached)
-                if len(pd.date_range(dates_to_retrieve[0], dates_to_retrieve[-1], freq="D")) != len(
-                    dates_to_retrieve
-                ):
+                if len(
+                    pd.date_range(dates_to_retrieve[0], dates_to_retrieve[-1], freq="D")
+                ) != len(dates_to_retrieve):
                     # the cache returns data for the whole day, but we only want specific datetimes
-                    all_cached_data.append(cached.sel({time_dim: dates_to_retrieve}, method="nearest"))
+                    all_cached_data.append(
+                        cached.sel({time_dim: dates_to_retrieve}, method="nearest")
+                    )
                 else:
                     all_cached_data.append(cached)
 
