@@ -21,7 +21,7 @@ repos:
       - id: python-check-blanket-noqa # Check for # noqa: all
       - id: python-no-log-warn # Check for log.warn
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.12.10
+    rev: v0.13.3
     hooks:
       - id: ruff-check
         args:
@@ -45,7 +45,7 @@ repos:
           - --check-class # Check class docstrings
         exclude: ^tests/
   - repo: https://github.com/adamchainz/blacken-docs
-    rev: "1.19.1"
+    rev: "1.20.0"
     hooks:
       - id: blacken-docs
         additional_dependencies:
