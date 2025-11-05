@@ -32,7 +32,7 @@ class DataRetriever(BaseRetriever):
         source: str,
         variables: list[tuple[str, dict]],
         dates: datetime.date | str | pd.Timestamp | list[Any],
-        rename: bool = True,
+        rename: bool = False,
         **kwargs: Any,
     ) -> xr.Dataset:
         """

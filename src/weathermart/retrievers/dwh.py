@@ -37,6 +37,160 @@ for var, dwh_var in dwh_dic.items():
     if avail_suf not in possible_hourly_suffixes:
         dwh_dic[var].append(dwh_var[0][:-2] + possible_hourly_suffixes[0])
 
+MCH_STATIONS = [
+    "ARO",
+    "RAG",
+    "HAI",
+    "HLL",
+    "DEM",
+    "EBK",
+    "ELM",
+    "EIN",
+    "ANT",
+    "MER",
+    "CHD",
+    "GRA",
+    "CHM",
+    "LAG",
+    "KOP",
+    "BLA",
+    "GRO",
+    "BEH",
+    "SIA",
+    "SMM",
+    "DAV",
+    "CHU",
+    "ROB",
+    "SAM",
+    "SCU",
+    "DOL",
+    "PAY",
+    "JUN",
+    "WYN",
+    "SAE",
+    "VAD",
+    "AIG",
+    "MLS",
+    "FAH",
+    "MVE",
+    "ZER",
+    "CHA",
+    "PIL",
+    "ALT",
+    "ULR",
+    "PIO",
+    "LUG",
+    "NAP",
+    "SIO",
+    "MAG",
+    "NEU",
+    "SBO",
+    "INT",
+    "DIS",
+    "STG",
+    "GLA",
+    "GVE",
+    "KLO",
+    "GUE",
+    "PUY",
+    "GSB",
+    "ABO",
+    "VIS",
+    "CDF",
+    "RUE",
+    "BUS",
+    "LUZ",
+    "ENG",
+    "SHA",
+    "SMA",
+    "SBE",
+    "WFJ",
+    "COV",
+    "BAS",
+    "CGI",
+    "FRE",
+    "BER",
+    "GUT",
+    "GOE",
+    "WAE",
+    "TAE",
+    "REH",
+    "OTL",
+    "BEZ",
+    "MUB",
+    "CIM",
+    "EVO",
+    "LEI",
+    "GRH",
+    "COM",
+    "LAE",
+    "HOE",
+    "PLF",
+    "ROE",
+    "BIN",
+    "MAR",
+    "SAG",
+    "CHZ",
+    "COY",
+    "VEV",
+    "BOU",
+    "TIT",
+    "FRU",
+    "MOE",
+    "MAH",
+    "CHB",
+    "MTE",
+    "PRE",
+    "VLS",
+    "ARH",
+    "GOS",
+    "AND",
+    "BIV",
+    "MTR",
+    "BIA",
+    "SCM",
+    "AEG",
+    "LAT",
+    "MOB",
+    "CDM",
+    "SIM",
+    "BUF",
+    "BIZ",
+    "PFA",
+    "FLU",
+    "BOL",
+    "THU",
+    "MAS",
+    "VIT",
+    "GRE",
+    "MOA",
+    "CEV",
+    "CRM",
+    "CMA",
+    "GEN",
+    "BIE",
+    "ORO",
+    "BRL",
+    "EGO",
+    "STK",
+    "DIA",
+    "BRZ",
+    "SPF",
+    "QUI",
+    "VAB",
+    "PMA",
+    "NAS",
+    "ATT",
+    "EVI",
+    "GOR",
+    "EGH",
+    "GIH",
+    "GES",
+    "SRS",
+    "VIO",
+    "OBR",
+]
+
 
 class DWHRetriever(BaseRetriever):
     """
@@ -236,7 +390,7 @@ class DWHRetriever(BaseRetriever):
         dates: datetime.date | str | pd.Timestamp | list[Any],
         jretrieve_credentials_path: str | None = None,
         temporal_resolution: str = "T",
-        use_limitation: int = 20,
+        use_limitation: int | None = None,
         longitude_range: tuple[float, float] = (0.5, 16.5),
         latitude_range: tuple[float, float] = (43.0, 50.0),
     ) -> xr.Dataset:
@@ -261,7 +415,7 @@ class DWHRetriever(BaseRetriever):
         temporal_resolution : str, optional
             Temporal resolution for the data. Default is 'T'. Can be 'H'.
         use_limitation : int, optional
-            useLimitation parameter for jretrieve. Default is 20.
+            useLimitation parameter for jretrieve. Default is None and retrieves SwissMetNet stations.
         longitude_range : tuple of float, optional
             Longitude range for filtering stations. Default is (0.5, 16.5).
         latitude_range : tuple of float, optional
@@ -332,21 +486,28 @@ class DWHRetriever(BaseRetriever):
         jretrieve_variables = [
             v for v in jretrieve_variables if v[-2:] in possible_suffixes
         ]
-        coords_station_df = DWHRetriever.get_jretrieve_stations(
-            jretrieve_client_id,
-            jretrieve_client_secret,
-            jretrieve_variables,
-            use_limitation,
-            longitude_range,
-            latitude_range,
-        )
-        stations = coords_station_df["station"].tolist()
-        if use_limitation > 20:
+        if use_limitation is None:
+            stations = MCH_STATIONS
+            coords_station_df = DWHRetriever.get_coords_for_stations(
+                stations, jretrieve_client_id, jretrieve_client_secret
+            )
+        else:
+            coords_station_df = DWHRetriever.get_jretrieve_stations(
+                jretrieve_client_id,
+                jretrieve_client_secret,
+                jretrieve_variables,
+                use_limitation,
+                longitude_range,
+                latitude_range,
+            )
+            stations = coords_station_df["station"].tolist()
+
+        if use_limitation is not None and use_limitation > 20:
             logging.warning(
                 "use_limitation in jretrieve is set to %s, which is higher than the default of 20.",
                 use_limitation,
             )
-        elif use_limitation > 40:
+        elif use_limitation is not None and use_limitation > 40:
             raise ValueError(
                 f"use_limitation is set to {use_limitation}, which is higher than 40."
             )
@@ -368,8 +529,9 @@ class DWHRetriever(BaseRetriever):
                 "placeholder": pd.NA,
                 "headerDisabled": True,
                 "measCatNr": 1,
-                "useLimitation": use_limitation,
             }
+            if use_limitation is not None:
+                query_args["useLimitation"] = use_limitation
             df = DWHRetriever.request_from_jretrieve(
                 endpoint=source.lower(),
                 jretrieve_client_id=jretrieve_client_id,
@@ -413,7 +575,6 @@ class DWHRetriever(BaseRetriever):
                     "stationName": ("station", coords_station_df["stationName"]),
                     "longitude": ("station", coords_station_df["x"]),
                     "latitude": ("station", coords_station_df["y"]),
-                    "dataOwner": ("station", coords_station_df["dataOwner"]),
                 },
             )
             .expand_dims(time=geodf.time.unique())
@@ -423,18 +584,26 @@ class DWHRetriever(BaseRetriever):
         array = (
             geodf.set_index(["time", "station"])
             .to_xarray()
-            .drop_vars(["geometry", "x", "y", "stationName", "dataOwner"])
+            .drop_vars(["geometry", "x", "y", "stationName"])
             .assign_coords(
                 {
                     "x": ("station", retrieved_stations["x"]),
                     "y": ("station", retrieved_stations["y"]),
                     "stationName": ("station", retrieved_stations["stationName"]),
-                    "dataOwner": ("station", retrieved_stations["dataOwner"]),
                     "longitude": ("station", retrieved_stations["x"]),
                     "latitude": ("station", retrieved_stations["y"]),
                 }
             )
         )
+        if "dateOwner" in coords_station_df.columns:
+            coords_station_xa = coords_station_xa.assign_coords(
+                {"dataOwner": ("station", coords_station_df["dataOwner"])}
+            )
+            geodf = (
+                geodf.assign_coords(
+                    {"dataOwner": ("station", retrieved_stations["dataOwner"])}
+                ),
+            )
         missing_stations = set(stations).difference(set(geodf["station"]))
         array = xr.concat(
             [array, coords_station_xa.sel(station=list(missing_stations))],
