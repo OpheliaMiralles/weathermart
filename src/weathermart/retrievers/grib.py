@@ -77,6 +77,81 @@ class GribRetriever(BaseRetriever):
                         ds[c].attrs["metadata"][k] = v.tolist()
         return ds
 
+    def _convert_tot_precip_to_instant(
+        self,
+        ds: xr.Dataset,
+        step_hours: list[int],
+        step_hours_sec: list[np.timedelta64],
+    ) -> xr.Dataset:
+        """
+        Convert accumulated TOT_PREC to instant precipitation using available forecast_reference_time
+        and lead_time. This encapsulates the logic previously inline in open_and_process_data.
+        """
+        valid_time = np.add.outer(
+            ds.forecast_reference_time.data.flatten(),
+            ds.lead_time.data.flatten(),
+        ).flatten()
+        # create a continuous hourly time series based on step_hour between each updated forecast_reference_time
+        first, last = (
+            ds.forecast_reference_time.data[0],
+            ds.forecast_reference_time.data[-1],
+        )
+        daterange = list(pd.date_range(first, last, freq="1h")[:: len(step_hours)])
+        ds = ds.sel(forecast_reference_time=daterange, lead_time=step_hours_sec)
+
+        valid_time = np.add.outer(
+            ds.forecast_reference_time.data.flatten(),
+            ds.lead_time.data.flatten(),
+        ).flatten()
+        unique_valid_times = set(valid_time)
+        if len(valid_time) != len(unique_valid_times):
+            raise ValueError(
+                "Cannot compute instant precipitation when validity time has duplicate values."
+            )
+
+        # computes instant precipitation (not accumulated) — only when validity time is unique
+        ds_start = ds.isel(forecast_reference_time=[0])
+        valid_time = (
+            ds.forecast_reference_time.data[0] + ds_start.lead_time.data.flatten()
+        )
+        ds_start = (
+            ds_start.stack(z=("forecast_reference_time", "lead_time"))
+            .assign_coords(time=("z", valid_time))
+            .swap_dims(z="time")
+            .drop("valid_time")
+        )
+        conc = [ds_start]
+
+        # cumsum over several days
+        for t_val in sorted(list(set(ds.forecast_reference_time.data)))[1:]:
+            ds_accum = ds.sel(forecast_reference_time=[t_val]).isel(
+                lead_time=slice(0, None)
+            ) + conc[-1].isel(time=-1)
+            valid_time = t_val + ds_accum.lead_time.data.flatten()
+            ds_accum = (
+                ds_accum.stack(z=("forecast_reference_time", "lead_time"))
+                .assign_coords(time=("z", valid_time))
+                .swap_dims(z="time")
+                .drop("valid_time")
+            )
+            conc.append(ds_accum)
+
+        # then we diff to get the instant precip
+        ds = xr.concat(conc, dim="time").diff("time")
+        valid_dates = [
+            t
+            for t in ds.time.data
+            if pd.to_datetime(t).date() > pd.to_datetime(first).date()
+            and pd.to_datetime(t).date() < pd.to_datetime(last).date()
+        ]
+        ds = (
+            ds.sel(time=valid_dates)
+            .swap_dims(time="z")
+            .set_index(z=["forecast_reference_time", "lead_time"])
+            .unstack()
+        )
+        return ds
+
     def retrieve(
         self,
         source: str,
@@ -87,6 +162,7 @@ class GribRetriever(BaseRetriever):
         levels: int | list[int] = [80],
         step_hours: int | list[int] = 0,
         ensemble_members: int | list[int | None] | None = None,
+        instant_precip: bool = False,
     ) -> xr.Dataset:
         """
         Retrieve and process local grib data for given source, variables, and dates using meteodata-lab and earthkit data.
@@ -110,6 +186,9 @@ class GribRetriever(BaseRetriever):
             Step hour(s) to retrieve. Default is 0.
         ensemble_members : int or list of int, optional
             Ensemble member(s) to retrieve. Default is None.
+        instant_precip: bool, optional
+            If True and "TOT_PREC" is requested, convert accumulated precipitation to
+            instant precipitation. Default is False (default accumulation period).
 
         Returns
         -------
@@ -146,7 +225,10 @@ class GribRetriever(BaseRetriever):
         if not all(75 <= lev <= 80 for lev in levels) and not all(
             t in ["ANA", "FG"] for t in datatypes
         ):
-            logging.warning("Only vertical levels 75 to 80 are supported for forecast data. Levels input: %s", levels)
+            logging.warning(
+                "Only vertical levels 75 to 80 are supported for forecast data. Levels input: %s",
+                levels,
+            )
         ensemble_members = (
             [ensemble_members]
             if isinstance(ensemble_members, str | int | type(None))
@@ -197,7 +279,16 @@ class GribRetriever(BaseRetriever):
         def open_and_process_data(all_paths: list[pathlib.Path]) -> xr.Dataset:
             try:
                 fds = data_source.FileDataSource(datafiles=[str(p) for p in all_paths])
-                vars_on_vertical_levels = ["U", "V", "T", "QV", "P", "W_SO", "T_SO", "WSHEAR_DIFF"]
+                vars_on_vertical_levels = [
+                    "U",
+                    "V",
+                    "T",
+                    "QV",
+                    "P",
+                    "W_SO",
+                    "T_SO",
+                    "WSHEAR_DIFF",
+                ]
                 non_vert_params = list(
                     set(self.requested_variables).difference(
                         set(vars_on_vertical_levels)
@@ -254,12 +345,41 @@ class GribRetriever(BaseRetriever):
                 {k: name_mapping[str(k)] for k in ds.coords if k in name_mapping}
             )
             ds = self.handle_metadata(ds)
+            if "TOT_PREC" in self.requested_variables and instant_precip:
+                ds = self._convert_tot_precip_to_instant(ds, step_hours, step_hours_sec)
             return ds.unify_chunks()
 
         def get_data_for_type(t: str) -> list[xr.Dataset]:
+            """
+            Loop through relevant configuration, retrieve requested variables.
+            If precipitation is requested, retrieve the first guess file if the analysis data is requested
+            instantaneous rain rate.
+            For forecast data, if instant_precip is set to True in the kwargs of the retriever, this function also
+            retrieves the day before to get the last available forecast reference time and lead times for instantaneous
+            rain rate computation.
+
+            Parameters
+            ----------
+            t: str
+                The type of data to retrieve, can be "FCST" for forecast, "FG" for first guess or "AN" for analysis.
+
+            Returns
+            -------
+            list of xr.Dataset
+                List of retrieved datasets.
+            """
             concat = []
             for date in dates:
                 all_paths = get_all_files_from_date(date, t)
+                if "TOT_PREC" in self.requested_variables and instant_precip:
+                    # need to retrieve last available forecast reference time and lead times to compute
+                    # instantaneous rain rate, which is a derivative of the accumulated precipitation
+                    all_paths += get_all_files_from_date(
+                        date + pd.to_timedelta("1d"), t
+                    )
+                    all_paths += get_all_files_from_date(
+                        date - pd.to_timedelta("1d"), t
+                    )
                 if all_paths:
                     new_data = open_and_process_data(all_paths)
                     if new_data is not None:
