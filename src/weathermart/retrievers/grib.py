@@ -109,7 +109,6 @@ class GribRetriever(BaseRetriever):
                 "Cannot compute instant precipitation when validity time has duplicate values."
             )
 
-        # computes instant precipitation (not accumulated) — only when validity time is unique
         ds_start = ds.isel(forecast_reference_time=[0])
         valid_time = (
             ds.forecast_reference_time.data[0] + ds_start.lead_time.data.flatten()
@@ -135,7 +134,6 @@ class GribRetriever(BaseRetriever):
                 .drop("valid_time")
             )
             conc.append(ds_accum)
-
         # then we diff to get the instant precip
         ds = xr.concat(conc, dim="time").diff("time")
         valid_dates = [
@@ -318,12 +316,10 @@ class GribRetriever(BaseRetriever):
                 for var, da in dic.items():
                     arr = da
                     if "z" in arr.dims and arr.sizes["z"] == 1:
-                        # Robustly drop singleton vertical dim and any leftover coord
                         arr = arr.isel(z=0, drop=True)
                         if "z" in arr.coords:
-                            arr = arr.drop_vars("z", errors="ignore")
+                            arr = arr.drop_vars("z")
                     elif "z" in arr.dims and arr.sizes["z"] > 1:
-                        # Rename vertical dim to vcoord_type (e.g. 'height', 'pressure')
                         vdim = arr.attrs.get("vcoord_type", "z")
                         arr = arr.rename({"z": vdim})
                     if "eps" in arr.dims and arr.sizes["eps"] == 1:
@@ -332,7 +328,6 @@ class GribRetriever(BaseRetriever):
                             arr = arr.drop_vars("eps", errors="ignore")
                     dic[var] = arr
                 ds = xr.merge([dic[p].rename(p) for p in dic])
-                # Extra guard: squeeze any remaining length-1 dims
                 ds = ds.squeeze(drop=True)
             except ValueError as exc:
                 raise ValueError("Could not retrieve data.") from exc
@@ -346,7 +341,15 @@ class GribRetriever(BaseRetriever):
             )
             ds = self.handle_metadata(ds)
             if "TOT_PREC" in self.requested_variables and instant_precip:
-                ds = self._convert_tot_precip_to_instant(ds, step_hours, step_hours_sec)
+                ds_accum = self._convert_tot_precip_to_instant(
+                    ds[["TOT_PREC"]], step_hours, step_hours_sec
+                )
+                ds = ds.sel(
+                    forecast_reference_time=ds_accum.forecast_reference_time,
+                    lead_time=ds_accum.lead_time,
+                )
+                ds_accum = ds_accum.transpose(*ds.dims)
+                ds = ds.drop_vars("TOT_PREC").assign(TOT_PREC=ds_accum["TOT_PREC"])
             return ds.unify_chunks()
 
         def get_data_for_type(t: str) -> list[xr.Dataset]:
