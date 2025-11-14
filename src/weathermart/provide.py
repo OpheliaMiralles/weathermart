@@ -421,6 +421,8 @@ class DataProvider:
             dates_to_retrieve = sorted(
                 [d for d in dates if pd.to_datetime(d).date() == date.date()]
             )
+            if len(dates_to_retrieve) == 0:
+                continue
             logging.info(
                 "Reading %s %s data from cache for %s",
                 source,
