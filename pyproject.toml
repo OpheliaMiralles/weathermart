@@ -10,7 +10,7 @@ readme = "README.md"
 authors = [
     { name = "Ophélia Miralles", email = "opheliamiralles@gmail.com" }
 ]
-requires-python = ">=3.10"
+requires-python = "==3.12.*"
 dependencies = [
     "geopandas>=1.0.1",
     "httpx>=0.28.1",
@@ -20,6 +20,7 @@ dependencies = [
     "wradlib>=2.4.0",
     "xarray>=2025.6.1",
     "zarr>=2.18.3",
+    "yrprod",
 ]
 
 [project.optional-dependencies]
@@ -29,16 +30,21 @@ radar = [
 eumetsat = ["satpy", "eumdac", "pyresample"]
 dem = ["rioxarray", "pystac-client", "planetary-computer"]
 grib = ["meteodata-lab>=0.4.0", "earthkit>=0.6.0"]
+netatmo = ["yrprod"]
+
+[tool.uv.sources]
+yrprod = { path = "../yrprod"}
 
 [project.entry-points."weathermart.retriever"]
 GribRetriever = "weathermart.retrievers:GribRetriever"
 CEDTMRetriever = "weathermart.retrievers:CEDTMRetriever"
 NASADEMRetriever = "weathermart.retrievers:NASADEMRetriever"
 DHM25Retriever = "weathermart.retrievers:DHM25Retriever"
-DWHRetriever = "weathermart.retrievers:DWHRetriever"
 FDBRetriever = "weathermart.retrievers:FDBRetriever"
 OperaRetriever = "weathermart.retrievers:OperaRetriever"
 EumetsatRetriever = "weathermart.retrievers:EumetsatRetriever"
+NetAtmoRetriever = "weathermart.retrievers:NetAtmoRetriever"
+TitanRetriever = "weathermart.retrievers:TitanRetriever"
 
 [dependency-groups]
 dev = [

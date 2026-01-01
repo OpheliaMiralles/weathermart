@@ -7,51 +7,283 @@ import shutil
 import time
 import warnings
 from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import as_completed
 from tempfile import TemporaryDirectory
 from typing import Any
-
-import dask
+import functools
+import threading
+import time
+from pathlib import Path
 import pandas as pd
 import urllib3
 import xarray as xr
+import re
+from weathermart.base import BaseRetriever, checktype
+from weathermart.utils import ICON_DOMAIN, get_nrows_ncols_from_domain_size_and_reskm
 
-from weathermart.base import BaseRetriever
-from weathermart.base import checktype
-from weathermart.utils import ICON_DOMAIN
-from weathermart.utils import get_nrows_ncols_from_domain_size_and_reskm
+max_workers = min(os.cpu_count() or 4, 8)
+logger = logging.getLogger(__name__)
+EUMETSAT_SOURCES = {
+    "MSG_SEVIRI": {
+        "platform": "MSG (SEVIRI)",
+        "type": "geostationary",
+        "freq": "5–15 min",
+        "res": "~3 km (nadir, ~4–6 km Scandinavia)",
+        "products": {
+            "channels": {
+                "code": "EO:EUM:DAT:MSG:HRSEVIRI",
+                "variables": ['HRV', 'IR_016', 'IR_039', 'IR_087', 'IR_097', 'IR_108', 'IR_120', 'IR_134', 'VIS006', 'VIS008', 'WV_062', 'WV_073'],
+                "round_time": "15min",
+                "reader": "seviri_l1b_native",
+                "format": ".nat",
+                "description": (
+                    "Core geostationary imager for nowcasting: cloud motion vectors, "
+                    "convective initiation, cloud phase/height proxies, fog/low clouds, "
+                    "rapid precipitation evolution."
+                ),
+            },
+            "cloud_top_height": {
+                "code": "EO:EUM:DAT:MSG:CTH",
+                "format": ".grb",
+                "reader": "seviri_l2_grib",
+                "round_time": "15min",
+                "variables": ['cloud_top_height', 'cloud_top_quality'],
+                "description": (
+                    "NWC SAF cloud top height/pressure/temperature. "
+                    "Key for diagnosing deep convection and storm intensity."
+                ),
+            },
+            "cloud_mask": {
+                "code": "EO:EUM:DAT:MSG:CLM",
+                "format": ".grb",
+                "reader": "seviri_l2_grib",
+                "variables": ['cloud_mask'],
+                "description": (
+                    "Each pixel is classified as one"
+                    " of the following four types: clear sky over water, "
+                    "clear sky over land, cloud, or not processed "
+                    "(off Earth disc).")
+            },
+        }
+    },
 
-max_workers = os.cpu_count()
+    "METOP_AVHRR": {
+        "platform": "Metop-A/B/C (AVHRR)",
+        "type": "polar",
+        "freq": "2–4 passes/day",
+        "res": "~1 km",
+        "reader": "avhrr_l1b_eps",
+        "products": {
+            "avhrr_l1": {
+                "code": "EO:EUM:DAT:METOP:AVHRRL1",
+                "variables": ["visible", "near_ir", "thermal_ir"],
+                "format": ".zip",
+                "round_time": None,
+                "description": (
+                    "High-resolution polar imager. "
+                    "Surface temperature, cloud mask, snow/ice discrimination, "
+                    "surface characterization for short-range forecasting."
+                ),
+            },
+        },
+    },
+
+    "METOP_IASI": {
+        "platform": "Metop-A/B/C (IASI)",
+        "type": "polar",
+        "freq": "2–4 passes/day",
+        "res": "~12 km",
+        "reader": "iasi_l1c_eps",
+        "products": {
+            "iasi_radiances": {
+                "code": "EO:EUM:DAT:METOP:IASI_L1C",
+                "variables": ["ir_radiances"],
+                "round_time": None,
+                "format": ".zip",
+                "description": (
+                    "Hyperspectral IR radiances. "
+                    "Temperature and humidity profile information, "
+                    "valuable for nowcasting via assimilation or ML encoders."
+                ),
+            },
+            "iasi_cloud_products": {
+                "code": "EO:EUM:DAT:METOP:IASIL2CLP",
+                "variables": ["cloud_fraction", "cloud_top_pressure"],
+                "format": ".zip",
+                "description": (
+                    "IASI cloud properties complementing SEVIRI, "
+                    "especially useful at high latitudes and during polar night."
+                ),
+            },
+        },
+    },
+
+    "METOP_MHS": {
+        "platform": "Metop-A/B/C (MHS)",
+        "type": "polar",
+        "freq": "2–4 passes/day",
+        "res": "~50 km",
+        "reader": "mhs_l1c_eps",
+        "products": {
+            "mhs_radiances": {
+                "code": "EO:EUM:DAT:METOP:MHSL1",
+                "variables": ["brightness_temperature"],
+                "round_time": None,
+                "variables": ["mw_radiances"],
+                "format": ".zip",
+                "description": (
+                    "Microwave humidity sounder radiances. "
+                    "Sensitive to upper-tropospheric humidity and precipitation, "
+                    "works under cloud cover where IR fails."
+                ),
+            },
+        },
+    },
+
+    "METOP_ASCAT": {
+        "platform": "Metop-B/C (ASCAT)",
+        "type": "polar",
+        "freq": "2 passes/day",
+        "res": "~12.5 km",
+        "products": {
+            "ascat_coastal_winds": {
+                "code": "EO:EUM:DAT:METOP:OSI-104",
+                "variables": ["u10", "v10"],
+                "format": ".nc",
+                "description": (
+                    "High-resolution coastal ASCAT winds (Metop-B). "
+                    "Improves near-shore wind and precipitation forecasts."
+                ),
+            },
+        },
+    },
+
+    "MTG_LI": {
+        "platform": "MTG-I (Lightning Imager)",
+        "type": "geostationary",
+        "freq": "2–10 min",
+        "res": "~10 km",
+        "products": {
+            "li_flashes": {
+                "code": "EO:EUM:DAT:0686",
+                "variables": ["flash_count"],
+                "format": ".nc",
+                "description": (
+                    "Accumulated lightning flashes. "
+                    "Strong indicator of convective intensity and storm lifecycle."
+                ),
+            },
+            "li_flash_area": {
+                "code": "EO:EUM:DAT:0687",
+                "variables": ["flash_area"],
+                "format": ".nc",
+                "description": (
+                    "Lightning flash area. "
+                    "Helps identify organized convection and severe storm evolution."
+                ),
+            },
+        },
+    },
+}
+def extract_all_variables(sources: dict) -> list[str]:
+    vars_all = []
+
+    for platform, pdata in sources.items():
+        products = pdata.get("products", {})
+        for prod_name, p in products.items():
+            if "variables" in p:
+                vars_all.extend(p["variables"])
+
+    seen = set()
+    uniq = []
+    for v in vars_all:
+        if v not in seen:
+            uniq.append(v)
+            seen.add(v)
+
+    return uniq
+
+class _EumetsatTokenCache:
+    token = None
+    expiry = None
+    lock = threading.Lock()
+
+def get_cached_eumdac_token(eumdac, key, secret):
+    """
+    Request token only when expired.
+    Caches token for ~50 minutes (safety below true 1h TTL).
+    """
+    with _EumetsatTokenCache.lock:
+        now = datetime.datetime.utcnow()
+
+        if _EumetsatTokenCache.token and _EumetsatTokenCache.expiry > now:
+            return _EumetsatTokenCache.token
+
+        # request new token
+        token = eumdac.AccessToken((key, secret))
+        _EumetsatTokenCache.token = token
+        _EumetsatTokenCache.expiry = now + datetime.timedelta(minutes=50)
+
+        return token
+
+class RateLimiter:
+    def __init__(self, rate_per_sec=20):
+        self.rate = rate_per_sec
+        self.last = time.monotonic()
+        self.lock = threading.Lock()
+
+    def wait(self):
+        with self.lock:
+            now = time.monotonic()
+            delay = (1.0 / self.rate) - (now - self.last)
+            if delay > 0:
+                time.sleep(delay)
+            self.last = time.monotonic()
 
 
-def round_to_nearest_15_minutes(dt: datetime.datetime) -> datetime.datetime:
-    """Round a datetime object to the nearest 15 minutes."""
-    rounded_minutes = 15 * round(dt.minute / 15)
-    delta_minutes = rounded_minutes - dt.minute
-    return (dt + datetime.timedelta(minutes=delta_minutes)).replace(
+rate_limiter = RateLimiter(rate_per_sec=20)   # safe default
+
+RE_YYYYMMDD_HHMMSS_FLEX = re.compile(
+    r'(?<!\d)(?P<date>\d{8})(?P<sep>[-_]?)(?P<time>\d{6})(?!\d)'
+)
+
+def extract_time_flex(name: str) -> datetime.datetime | None:
+    m = RE_YYYYMMDD_HHMMSS_FLEX.search(name)
+    if not m:
+        return None
+    return datetime.datetime.strptime(m.group("date") + m.group("time"), "%Y%m%d%H%M%S")
+
+def retry_download(fn):
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        delay = 1
+        for attempt in range(5):     # max retries
+            try:
+                rate_limiter.wait()
+                return fn(*args, **kwargs)
+            except urllib3.exceptions.ProtocolError:
+                time.sleep(delay)
+                delay *= 2
+            except Exception:
+                time.sleep(delay)
+                delay *= 2
+        raise RuntimeError("Download failed after retries")
+    return wrapper
+
+
+def round_to_nearest_minutes(dt: datetime.datetime, freq=15) -> datetime.datetime:
+    m = freq * round(dt.minute / freq)
+    return (dt + datetime.timedelta(minutes=m - dt.minute)).replace(
         second=0, microsecond=0
     )
 
-
 class EumetsatRetriever(BaseRetriever):
+    """
+    Generic EUMETSAT retriever for geostationary + polar satellites.
+    """
     crs = "epsg:4326"
-    sources = ("SATELLITE",)
+    sources = tuple(EUMETSAT_SOURCES.keys())
     variables = {
-        k: [k]
-        for k in [
-            "VIS006",
-            "IR_039",
-            "IR_108",
-            "HRV",
-            "IR_097",
-            "WV_062",
-            "IR_087",
-            "IR_016",
-            "VIS008",
-            "IR_134",
-            "WV_073",
-            "IR_120",
-        ]
+        k: [k] for k in extract_all_variables(EUMETSAT_SOURCES)
     }
 
     def retrieve(
@@ -59,13 +291,15 @@ class EumetsatRetriever(BaseRetriever):
         source: str,
         variables: list[tuple[str, dict]],
         dates: datetime.date | str | pd.Timestamp | list[Any],
-        bbox: tuple[float, float, float, float] | None = ICON_DOMAIN,
-        resolution: str | float = "1km",
+        *,
+        bbox: tuple[float, float, float, float] = ICON_DOMAIN,
+        product: str = "auto",
+        resolution: str | float = "2km",
         eumdac_credentials_path: str | None = None,
-        test: bool = False,  # download only first 30mins per day, for speed
+        test: bool = False,
     ) -> xr.Dataset:
         """
-        Retrieve OPERA radar data for specified dates and variables.
+        Retrieve EUMETSAT data for specified dates and variables.
 
         Parameters
         ----------
@@ -100,40 +334,45 @@ class EumetsatRetriever(BaseRetriever):
         """
         try:
             import eumdac
-            from eumdac.collection import SearchResults
-            from eumdac.product import Product
             from pyresample.geometry import AreaDefinition
-            from satpy import Scene
+            from satpy.scene import Scene
+            from satpy.readers.core.config import available_readers
         except ImportError as exc:
-            raise ImportError(
-                "The 'eumdac', 'pyresample', and 'satpy' packages are required for EUMETSAT data retrieval."
-            ) from exc
-        dates, variables = checktype(dates, variables)
-        if isinstance(resolution, str) and "km" in resolution:
-            self.res_km = float(resolution.replace("km", ""))
-        else:
-            self.res_km = resolution
+            raise ImportError("Requires eumdac, satpy, pyresample") from exc
 
-        # load credentials from environment variables or file
+        dates, _ = checktype(dates, variables)
+        if product == "auto":
+            product_names = list(EUMETSAT_SOURCES[source]["products"].keys())
+        else:
+            product_names = [product]
+        metadata = {k: v for k, v in EUMETSAT_SOURCES[source].items() if k != "products"}
+        if isinstance(resolution, str) and resolution.endswith("km"):
+            res_km = float(resolution.replace("km", ""))
+        else:
+            res_km = float(resolution)
         if eumdac_credentials_path is None:
-            eumdac_key = os.environ.get("EUMDAC_KEY")
-            eumdac_secret = os.environ.get("EUMDAC_SECRET")
-            if eumdac_key and eumdac_secret:
+            key = os.environ.get("EUMDAC_KEY")
+            secret = os.environ.get("EUMDAC_SECRET")
+            if key and secret:
                 logging.warning(
                     "Using EUMDAC_KEY and EUMDAC_SECRET environment variable."
                 )
-                token = eumdac.AccessToken((eumdac_key, eumdac_secret))
-            else:
-                raise RuntimeError(
-                    "Please provide either EUMDAC_KEY and EUMDAC_SECRET environment variables or a path to a .eumdac_credentials file."
-                )
+            if not (key and secret):
+                raise RuntimeError("Missing EUMDAC credentials")
+            token = get_cached_eumdac_token(
+                eumdac,
+                key,
+                secret
+            )
         else:
             try:
-                with open(eumdac_credentials_path, encoding="utf-8") as json_file:
-                    credentials = json.load(json_file)
-                    token = eumdac.AccessToken(
-                        (credentials["consumer_key"], credentials["consumer_secret"])
-                    )
+                with open(eumdac_credentials_path, encoding="utf-8") as f:
+                    cred = json.load(f)
+                token = get_cached_eumdac_token(
+                    eumdac,
+                    cred["consumer_key"],
+                    cred["consumer_secret"]
+                )
             except KeyError as exc:
                 raise RuntimeError(
                     "Please provide a path to a .eumdac_credentials file in kwargs for authentification. "
@@ -141,138 +380,128 @@ class EumetsatRetriever(BaseRetriever):
                     ".eumdac_credentials_dummy for an example."
                 ) from exc
 
-        # connect to the data store
+
         datastore = eumdac.DataStore(token)
-        selected_collection = datastore.get_collection("EO:EUM:DAT:MSG:HRSEVIRI")
-
-        def download_and_resample(
-            products: SearchResults, variables: list[tuple[str, dict]]
-        ) -> xr.Dataset:
-            def download(product: Product, tmpdir: str) -> None:
-                start = time.time()
-                filename = next(
-                    entry for entry in product.entries if entry.endswith(".nat")
-                )
-                try:
-                    with (
-                        product.open(entry=filename) as fsrc,
-                        open(f"{tmpdir}/{fsrc.name}", "wb") as fdst,
-                    ):
-                        shutil.copyfileobj(fsrc, fdst)
-                except urllib3.exceptions.ProtocolError as e:
-                    logging.error("%s with error: %s, skipping file", fsrc.name, e)
-                end = time.time()
-                logging.debug("Downloading %s took %.2f seconds", filename, end - start)
-
-            def open_and_resample(
-                filenames: list[str], variables: list[tuple[str, dict]]
-            ) -> list[xr.Dataset]:
-                width, height = get_nrows_ncols_from_domain_size_and_reskm(
-                    bbox, self.res_km
-                )
-                area = AreaDefinition(
-                    area_id="custom_bbox",
-                    proj_id="custom_bbox",
-                    description="Custom bounding box area",
-                    projection="EPSG:4326",
-                    width=width,
-                    height=height,
-                    area_extent=bbox,
-                )
-                ds_list = []
-                for filename in filenames:
-                    start = time.time()
-                    try:
-                        scn = Scene(reader="seviri_l1b_native", filenames=[filename])
-                        varnames = [self.variables[var[0]][0] for var in variables]
-                        scn.load(varnames)
-                        with warnings.catch_warnings():
-                            warnings.filterwarnings(
-                                "ignore",
-                                message="Upgrade 'pyresample' for a more accurate default 'radius_of_influence'.",
-                            )
-                            try:
-                                scn = scn.resample(area, resampler="nearest")
-                            except Exception as e:
-                                logging.error(
-                                    "%s with error: %s, skipping file", filename, e
-                                )
-                                continue
-
-                        data_arrays = {}
-                        for varname in varnames:
-                            data = scn[varname]
-                            data.attrs = {}
-                            data = data.drop_vars("crs")
-                            data_arrays[varname] = data
-
-                        # add time dimension
-                        timestamp = round_to_nearest_15_minutes(
-                            datetime.datetime.strptime(
-                                filename.split("-")[5].split(".")[0], "%Y%m%d%H%M%S"
-                            )
-                        )
-                        ds = xr.Dataset(data_arrays).expand_dims(time=[timestamp])
-                        ds_list.append(ds)
-                        end = time.time()
-                        logging.debug(
-                            "Resampling %s took %.2f seconds", filename, end - start
-                        )
-                    except ValueError as e:
-                        logging.error("%s with error: %s, skipping file", filename, e)
-                return ds_list
-
-            with TemporaryDirectory() as tmpdir:
-                with ThreadPoolExecutor(max_workers=5) as executor:
-                    futures = [
-                        executor.submit(download, product, tmpdir)
-                        for product in products
-                    ]
-                    for future in as_completed(futures):
-                        try:
-                            future.result()
-                        except Exception as e:
-                            logging.error("Error during download: %s", e)
-
-                filenames = glob.glob(f"{tmpdir}/*.nat")
-                ds_list = open_and_resample(filenames, variables)
-                start = time.time()
-                ds: xr.Dataset = xr.concat(ds_list, dim="time").sortby("time").load()
-                end = time.time()
-                logging.debug("Loading took %.2f seconds", end - start)
-                return ds
-
-        ds_list = []
-        for date in dates:
-            start = datetime.datetime.combine(
-                date, datetime.time(0, 0, 0)
-            ) - datetime.timedelta(minutes=10)
-            end = datetime.datetime.combine(
-                date, datetime.time(23, 59, 59)
-            ) - datetime.timedelta(minutes=10)
-            if test:
-                end = datetime.datetime.combine(date, datetime.time(0, 30, 0))
-            # Retrieve datasets that match our filter
-            products = selected_collection.search(dtstart=start, dtend=end)
-            # count number of images per satellite
-            counts = {i: 0 for i in range(1, 5)}
-            for product in products:
-                # product.satellite contains the number (e.g. MSG3)
-                counts[int(product.satellite[3])] += 1
-            # pick the maximum msg (higher has priority)
-            max_msg = max(counts, key=lambda k: (counts[k], k))
-            logging.debug("Counts per satellite: %s", counts)
-            logging.debug("Maximum MSG selected: %d", max_msg)
-            products = [p for p in products if int(p.satellite[3]) == max_msg]
-            # download the data
-            with dask.config.set(num_workers=4):
-                ds = download_and_resample(products, variables)
-            ds_list.append(ds)
-
-        # merge data for all dates
-        ds = xr.concat(ds_list, dim="time")
-        # rename all variables back to "global" variable names
-        ds = ds.rename(
-            {k[0]: j for j, k in self.variables.items() if k[0] in ds.data_vars}
+        width, height = get_nrows_ncols_from_domain_size_and_reskm(bbox, res_km)
+        area = AreaDefinition(
+            "bbox",
+            "bbox",
+            "epsg4326",
+            {"proj": "latlong"},
+            width,
+            height,
+            bbox,
         )
+
+        def process_products(products):
+            datasets = []
+
+            with TemporaryDirectory(dir="/lustre/storeB/users/opmir9231/tmp") as tmpdir:
+                @retry_download
+                def _download(prod):
+                    fname = next(e for e in prod.entries if e.endswith(format))
+                    with prod.open(entry=fname) as src, open(
+                            f"{tmpdir}/{os.path.basename(fname)}", "wb"
+                        ) as dst:
+                            shutil.copyfileobj(src, dst)
+
+                with ThreadPoolExecutor(max_workers=max_workers) as ex:
+                    list(ex.map(_download, products))
+
+                files = glob.glob(f"{tmpdir}/*{format}")
+
+                for f in files:
+                    try:
+                        if reader != "xarray":
+                            scn = Scene(reader=reader, filenames=[f])
+                            logger.debug(f"Available variables are: {scn.available_dataset_names()}")
+                            logger.debug(f"Loading variables {satpy_vars} from file {f}")
+                            scn.load(satpy_vars)
+                            with warnings.catch_warnings():
+                                warnings.simplefilter("ignore")
+                                scn = scn.resample(area, resampler="nearest")
+
+                            ds = scn.to_xarray().persist()
+                            t = scn.start_time or extract_time_flex(Path(f).stem)
+                        else:
+                            ds = xr.open_dataset(f)
+                            if "time" in ds.coords or "time" in ds.data_vars:
+                                ds = ds.drop_vars("time")
+                            if ds.lon.max() > 180:
+                                ds = ds.assign_coords(lon=(((ds.lon + 180) % 360) - 180))
+                            min_lon, min_lat, max_lon, max_lat = bbox
+                            st = ds.stack(cell=("NUMROWS", "NUMCELLS"))
+                            st = st.set_index(cell=("lat", "lon"))
+                            lat = st.indexes["cell"].get_level_values("lat").to_numpy()
+                            lon = st.indexes["cell"].get_level_values("lon").to_numpy()
+                            mask = (lat >= min_lat) & (lat <= max_lat) & (lon >= min_lon) & (lon <= max_lon)
+                            mask_da = xr.DataArray(mask, dims=("cell",), coords={"cell": st["cell"]})
+                            st_crop = st.where(mask_da, drop=True)
+                            ds = st_crop.persist().drop_duplicates("cell")
+                            t = extract_time_flex(Path(f).stem)
+                        if round_time:
+                            t = round_to_nearest_minutes(t, freq=int(round_time.replace("min", "")))
+                        ds = ds.expand_dims(time=[t])
+                        datasets.append(ds)
+
+                    except Exception:
+                        logger.exception("Failed to read %s", f)
+                        continue
+
+
+            return datasets
+
+        all_ds = []
+        for prod_name in product_names:    
+            product_cfg = EUMETSAT_SOURCES[source]["products"][prod_name]
+            metadata.update({k: v for k, v in product_cfg.items() if k != "variables"})
+            collection_id = product_cfg["code"]
+            reader = EUMETSAT_SOURCES[source].get("reader", product_cfg.get("reader", None))
+            format = product_cfg.get("format", None)
+            if reader is None and format is None:
+                raise RuntimeError("No reader or format specified for this product. Available readers are: " + str(available_readers()))
+            if format in [".nc", ".hdf5", ".zarr"] and reader is None:
+                reader = "xarray"
+            satpy_vars = product_cfg["variables"]
+            round_time = product_cfg.get("round_time", None)
+            collection = datastore.get_collection(collection_id)
+
+            ds_list = []
+
+            for date in dates:
+                start = datetime.datetime.combine(date, datetime.time.min)
+                end = start + datetime.timedelta(days=1)- datetime.timedelta(minutes=10)
+                if test:
+                    end = start + datetime.timedelta(minutes=30)
+
+                products = list(collection.search(dtstart=start, dtend=end))
+                if len(products) == 0:
+                    continue
+                def ptime(p):
+                    t = getattr(p, "sensing_start", None) or getattr(p, "sensing_end", None)
+                    if t is None:
+                        return None
+                    if round_time:
+                        t = round_to_nearest_minutes(t, freq=int(round_time.replace("min", "")))
+                    return t
+                products.sort(key=lambda p: (ptime(p) or datetime.datetime.max, str(p)))
+                chosen = {}
+                for p in products:
+                    t = ptime(p)
+                    if t is None:
+                        continue
+                    chosen.setdefault(t, p)
+                products = list(chosen.values())
+                logger.info("[%s/%s] %s -> %d after time-dedup", source, prod_name, date, len(products))
+                ds_list = process_products(products)
+
+                if ds_list:
+                    all_ds.append(xr.concat(ds_list, dim="time"))
+
+            if not all_ds:
+                return xr.Dataset()
+
+        ds = xr.concat(all_ds, dim="time").sortby("time")
+        ds = ds.assign_attrs(metadata).groupby("time").first()
+        ds["time"] = pd.to_datetime(ds["time"].values).tz_localize(None)
         return ds
