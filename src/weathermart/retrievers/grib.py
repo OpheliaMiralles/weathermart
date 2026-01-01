@@ -20,6 +20,15 @@ class GribRetriever(BaseRetriever):
     """
 
     def __init__(self) -> None:
+        from meteodatalab import data_source
+        from meteodatalab import grib_decoder
+        from meteodatalab.ogd_api import _geo_coords
+        nwp_dic = {
+            k: [k]
+            for k in variables_metadata[
+                variables_metadata.source == "ECCODES_COSMO"
+            ].short_name.unique()
+        }
         self.type_mapping = {"forecast": "FCST", "analysis": "ANA", "first_guess": "FG"}
         self.prefix_mapping = {"ICON-CH1-EPS": "i1", "COSMO-1E": "c1", "COSMO-2E": "c2"}
         self.ensemble_mapping: dict[str | int | None, str | None] = {
