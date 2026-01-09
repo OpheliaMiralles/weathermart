@@ -21,6 +21,7 @@ dependencies = [
     "xarray>=2025.6.1",
     "zarr>=2.18.3",
     "yrprod",
+    "python-geotiepoints>=1.8.0",
 ]
 
 [project.optional-dependencies]

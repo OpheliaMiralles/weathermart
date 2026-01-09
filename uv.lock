@@ -2647,6 +2647,26 @@ wheels = [
 ]
 
 [[package]]
+name = "python-geotiepoints"
+version = "1.8.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+    { name = "pandas" },
+    { name = "scipy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/88/a9/6f01cf36a722c6a0aeaa075e766a3f3199edd143414ba3a9478f069fc2c4/python_geotiepoints-1.8.0.tar.gz", hash = "sha256:d3c022d0d4fd749df9f05d9cb5d25518851a32712c619bfb2fee4812f2674aaf", size = 7674987, upload-time = "2025-09-10T19:04:56.052Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3b/84/45f56495229d34887a9e7d1e4db03f282240b61aba0bacb04d95a590dc00/python_geotiepoints-1.8.0-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:7c8f6a04b074e0790312a8bd759c7e75667a69b7a91d0751a287218b2bcce24e", size = 504967, upload-time = "2025-09-10T19:04:11.562Z" },
+    { url = "https://files.pythonhosted.org/packages/4f/17/a0ab270b8837a11ab9b4c943f308bda9bf9dc432c931c40cb1812e9308dc/python_geotiepoints-1.8.0-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:48a8a70cb432c56c0cbf3282a8ab29ed21d273ee8e715cd382148044b449f877", size = 469346, upload-time = "2025-09-10T19:04:12.777Z" },
+    { url = "https://files.pythonhosted.org/packages/a9/3d/f1c917793db859e7aedccd4f3c09ed627ddc0f7fb844e19a4a4945d9bb2c/python_geotiepoints-1.8.0-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:9d25e885f4b6186f614c22f3f9602a4c3b9d6d8f1b0857c2e783cb452709d548", size = 3019690, upload-time = "2025-09-10T19:04:13.921Z" },
+    { url = "https://files.pythonhosted.org/packages/83/0f/acabe78467cf5fd822063952e20fc28bafd91448ab7f8af07867849ebb52/python_geotiepoints-1.8.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:2c54296d0e2b86f3784cd8e9e1ec2f77fd2502014f7d1424a17f409291961c5b", size = 3114633, upload-time = "2025-09-10T19:04:15.507Z" },
+    { url = "https://files.pythonhosted.org/packages/1f/36/127f6e0fd8bbe5fa0907fef2158b75de8541b37f2087c5a297e1daa2b342/python_geotiepoints-1.8.0-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:ad2ff8c077f26b5313547f3c397e6930405bf16ade449df71f209bac83b6c40c", size = 3110755, upload-time = "2025-09-10T19:04:16.874Z" },
+    { url = "https://files.pythonhosted.org/packages/6c/94/eac0ed74cfc4588ff4fb9bbc4f70db52e1509b537dd1ff571e78cf98efba/python_geotiepoints-1.8.0-cp312-cp312-win_amd64.whl", hash = "sha256:292f22a7b5762a6a0f0a5b9879ceaed29f2256fb06ee25cf8194fd9689134e66", size = 442133, upload-time = "2025-09-10T19:04:18.384Z" },
+    { url = "https://files.pythonhosted.org/packages/74/42/bd4aac6d6ae5ef38e6a81cfe0016461adb8776697856fe4d2897053d134b/python_geotiepoints-1.8.0-cp312-cp312-win_arm64.whl", hash = "sha256:6d9ff5f0de7dbf581929a468ce0f96830d285a2a19df226e1584827da76823e2", size = 370352, upload-time = "2025-09-10T19:04:19.51Z" },
+]
+
+[[package]]
 name = "pytz"
 version = "2025.2"
 source = { registry = "https://pypi.org/simple" }
@@ -3267,6 +3287,7 @@ dependencies = [
     { name = "numpy" },
     { name = "omegaconf" },
     { name = "pandas" },
+    { name = "python-geotiepoints" },
     { name = "wradlib" },
     { name = "xarray" },
     { name = "yrprod" },
@@ -3316,6 +3337,7 @@ requires-dist = [
     { name = "planetary-computer", marker = "extra == 'dem'" },
     { name = "pyresample", marker = "extra == 'eumetsat'" },
     { name = "pystac-client", marker = "extra == 'dem'" },
+    { name = "python-geotiepoints", specifier = ">=1.8.0" },
     { name = "rioxarray", marker = "extra == 'dem'" },
     { name = "satpy", marker = "extra == 'eumetsat'" },
     { name = "wradlib", specifier = ">=2.4.0" },
