@@ -28,7 +28,8 @@ def chunk_data(data: xr.DataArray | xr.Dataset) -> Any:
         data["station"].attrs.update({"dtype": "str"})
         chunks = {dim: 1000 for dim in data.dims}
         return data.chunk(chunks)
-    return data
+    else:
+        return data.chunk()
 
 
 class CacheRetriever:
@@ -109,7 +110,9 @@ class CacheRetriever:
                     # date irrelevant for static variables
                     p = self.path / f"{source}{kwargs_str}/{variable[0]}"
                 if p.exists() and any(p.iterdir()):
-                    to_merge.append(xr.open_zarr(p.parent)[variable[0]])
+                    to_merge.append(
+                        xr.open_zarr(p.parent, consolidated=False)[variable[0]]
+                    )
                 else:
                     missing_vars[date].append(variable)
             if len(to_merge) > 0:
@@ -190,7 +193,7 @@ class CacheRetriever:
                 # date irrelevant
                 p = self.path / f"{source.lower()}{kwargs_str}/{variable}"
                 p.mkdir(parents=True, exist_ok=True, mode=0o2775)
-                logging.info(
+                logging.warning(
                     "Saving cache for %s %s (static) at %s", source, variable, p
                 )
                 data[variable].to_zarr(str(p.parent), mode="a")
@@ -198,14 +201,14 @@ class CacheRetriever:
             else:
                 for date in dates:
                     day_start = pd.to_datetime(date)
-                    day_end = pd.to_datetime(day_start + pd.to_timedelta("23h50m"))
+                    day_end = pd.to_datetime(day_start + pd.to_timedelta("23h59m"))
                     date_str = date.strftime("%Y%m%d")
                     p = (
                         self.path
                         / f"{source.lower()}{kwargs_str}/{date_str}/{variable}"
                     )
                     p.parent.mkdir(parents=True, exist_ok=True, mode=0o2775)
-                    logging.info(
+                    logging.warning(
                         "Saving cache for %s %s on %s at %s",
                         source,
                         variable,
@@ -226,8 +229,8 @@ class CacheRetriever:
                         "time" if "time" in data.dims else "forecast_reference_time"
                     )
                     # time should always exist, either observation time or validity time of a forecast
-                    if len(set(data[unique_time_dim].data.flatten())) != len(
-                        data[unique_time_dim].data.flatten()
+                    if len(set(data[unique_time_dim].data)) != len(
+                        data[unique_time_dim].data
                     ):
                         logging.info("Saving time with duplicated values")
                     valid_datetimes = sorted(
@@ -341,7 +344,7 @@ class DataProvider:
                     kwargs["storage_key"],
                 )
                 self._warned_about = True
-            return f"_{kwargs['storage_key']}"
+            return f"_{kwargs['storage_key']}" if kwargs["storage_key"] != "" else ""
 
         parts: list[str] = []
         for k, v in kwargs.items():
@@ -417,13 +420,15 @@ class DataProvider:
         is_static = self.get_static_flag(source)
         all_cached_data = []
 
-        for date in pd.date_range(dates[0], dates[-1], freq="D"):
+        for date in pd.date_range(dates[0], dates[-1], freq="D", tz="UTC").tz_localize(
+            None
+        ):
             dates_to_retrieve = sorted(
                 [d for d in dates if pd.to_datetime(d).date() == date.date()]
             )
             if len(dates_to_retrieve) == 0:
                 continue
-            logging.info(
+            logging.warning(
                 "Reading %s %s data from cache for %s",
                 source,
                 ",".join([v[0] for v in variables]),
@@ -452,7 +457,9 @@ class DataProvider:
                 )
                 cached = chunk_data(cached)
                 if len(
-                    pd.date_range(dates_to_retrieve[0], dates_to_retrieve[-1], freq="D")
+                    pd.date_range(
+                        dates_to_retrieve[0], dates_to_retrieve[-1], freq="D", tz="UTC"
+                    ).tz_localize(None)
                 ) != len(dates_to_retrieve):
                     # the cache returns data for the whole day, but we only want specific datetimes
                     all_cached_data.append(
@@ -462,12 +469,12 @@ class DataProvider:
                     all_cached_data.append(cached)
 
             if missing_vars:
-                logging.info(
+                logging.warning(
                     "Couldn't find %s in cache for %s",
                     ",".join([m[0] for m in missing_vars]),
                     date,
                 )
-                logging.info(
+                logging.warning(
                     "Retrieving %s from source %s",
                     ",".join([m[0] for m in missing_vars]),
                     source,

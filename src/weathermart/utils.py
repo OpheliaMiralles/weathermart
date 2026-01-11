@@ -10,23 +10,36 @@ from typing import Any
 import numpy as np
 
 ICON_DOMAIN = (0.5, 43, 16.5, 50)
+NORDIC_DOMAIN = (-8.08, 53.14, 40.73, 73.06)
 SWISS_EPSG = "epsg:2056"
 EARTH_CIRCUMFERENCE_KM = 40075
+KM_PER_DEGREE = EARTH_CIRCUMFERENCE_KM / 360.0
 EARTH_RADIUS_KM = EARTH_CIRCUMFERENCE_KM / 2 * np.pi
 
 
 def get_nrows_ncols_from_domain_size_and_reskm(
-    domain: tuple[float, float, float, float], res_km: float
+    domain: tuple[float, float, float, float],
+    res_km: float,
 ) -> tuple[int, int]:
-    """
-    Calculate number of rows and columns for a given domain and resolution in km.
+    """Compute grid shape for a lat/lon bounding box at a target resolution.
+
+    Parameters
+    ----------
+    domain : tuple[float, float, float, float]
+        Bounding box as (min_lon, min_lat, max_lon, max_lat) in degrees.
+    res_km : float
+        Target horizontal resolution in kilometers.
+
+    Returns
+    -------
+    tuple[int, int]
+        Number of grid points as (n_lat, n_lon).
     """
     min_lon, min_lat, max_lon, max_lat = domain
-    km_per_degree = EARTH_CIRCUMFERENCE_KM / 360.0
-    lat_km = (max_lat - min_lat) * km_per_degree
+    lat_km = (max_lat - min_lat) * KM_PER_DEGREE
     avg_lat = (min_lat + max_lat) / 2.0
-    lon_km = (max_lon - min_lon) * km_per_degree * cos(radians(avg_lat))
-    return lat_km // res_km, lon_km // res_km
+    lon_km = (max_lon - min_lon) * KM_PER_DEGREE * cos(radians(avg_lat))
+    return int(lat_km // res_km), int(lon_km // res_km)
 
 
 def read_file(path: str | Path) -> list[str]:
@@ -94,3 +107,19 @@ def distance_from_coordinates(
     )
     d = 2 * r * np.arcsin(np.sqrt(a))
     return d
+
+
+def assign_latlon_coords(
+    ds: Any,
+    x_dim: str = "x",
+    y_dim: str = "y",
+    crs: str = SWISS_EPSG,
+) -> Any:
+    """
+    Assign latitude and longitude coordinates to an xarray Dataset based on its x and y dimensions.
+    """
+    ds = ds.rio.write_crs(crs, inplace=True)
+    ds = ds.rio.write_coordinate_system(inplace=True)
+    ds = ds.rio.reproject("epsg:4326")
+    ds = ds.rename({ds.rio.x_dim: "lon", ds.rio.y_dim: "lat"})
+    return ds

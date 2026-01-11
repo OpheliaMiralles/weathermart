@@ -5,6 +5,26 @@ build/
 dist/
 wheels/
 *.egg-info
+.vscode
+*.pytest*
+*py.typed
+
 
 # Virtual environments
 .venv
+uv.lock
+.python-version
+
+# credentials
+*credentials.json
+
+#jobs
+run*.sh
+submit*.sh
+logs
+
+#examples
+examples
+*.png
+*_bris.py
+plots

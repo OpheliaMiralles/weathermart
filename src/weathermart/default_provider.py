@@ -6,34 +6,32 @@ from weathermart.base import BaseRetriever
 from weathermart.provide import CacheRetriever
 from weathermart.provide import DataProvider
 
+LOGGER = logging.getLogger(__name__)
+
 
 def available_retrievers() -> tuple[BaseRetriever, ...]:
     """
     Get all available retriever instances.
-
-    Returns
-    -------
-    list
-        List containing instances of available data retrievers.
     """
     retrievers: list[BaseRetriever] = []
 
     plugins = entry_points(group="weathermart.retriever")
     for plugin in plugins:
-        target = plugin.load()
-        if not callable(target):
-            raise RuntimeError(f"Invalid plugin '{plugin.name}={plugin.value}'")
-        instance = target()
-        if not isinstance(instance, BaseRetriever):
-            raise RuntimeError(f"Plugin '{instance}' does not implement BaseRetriever")
-        retrievers.append(instance)
+        try:
+            target = plugin.load()
+            instance = target() if callable(target) else target
+            if isinstance(instance, BaseRetriever):
+                retrievers.append(instance)
+        except Exception:
+            LOGGER.exception("Failed loading retriever plugin %s", plugin.name)
+            continue
 
     retrievers.sort(key=lambda r: (r.priority, r.__class__.__name__), reverse=True)
 
     return retrievers
 
 
-def default_provider(cache_location: Path | None = None) -> DataProvider:
+def default_provider(cache_location: Path | None) -> DataProvider:
     """
     Create the default DataProvider with caching.
 
@@ -53,7 +51,8 @@ def default_provider(cache_location: Path | None = None) -> DataProvider:
     """
     if cache_location:
         cache = CacheRetriever(cache_location)
-        logging.info("Using the cache located at %s.", cache_location)
+        logging.warning("Using the cache located at %s.", cache_location)
     else:
         cache = None
+        logging.warning("No cache is being used.")
     return DataProvider(cache, retrievers=available_retrievers())

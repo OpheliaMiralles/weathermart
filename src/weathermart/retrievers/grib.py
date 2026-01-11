@@ -8,20 +8,19 @@ from typing import Any
 import numpy as np
 import pandas as pd
 import xarray as xr
-from meteodatalab import data_source
-from meteodatalab import grib_decoder
-from meteodatalab.ogd_api import _geo_coords
 
 from weathermart.base import BaseRetriever
 from weathermart.base import checktype
 from weathermart.base import variables_metadata
 
-nwp_dic = {
-    k: [k]
-    for k in variables_metadata[
-        variables_metadata.source == "ECCODES_COSMO"
-    ].short_name.unique()
-}
+try:
+    from meteodatalab import data_source as _MDL_DATA_SOURCE
+    from meteodatalab import grib_decoder as _MDL_GRIB_DECODER
+    from meteodatalab.ogd_api import _geo_coords as _MDL_GEO_COORDS
+except ImportError:
+    _MDL_DATA_SOURCE = None
+    _MDL_GRIB_DECODER = None
+    _MDL_GEO_COORDS = None
 
 
 class GribRetriever(BaseRetriever):
@@ -30,6 +29,12 @@ class GribRetriever(BaseRetriever):
     """
 
     def __init__(self) -> None:
+        nwp_dic = {
+            k: [k]
+            for k in variables_metadata[
+                variables_metadata.source == "ECCODES_COSMO"
+            ].short_name.unique()
+        }
         self.type_mapping = {"forecast": "FCST", "analysis": "ANA", "first_guess": "FG"}
         self.prefix_mapping = {"ICON-CH1-EPS": "i1", "COSMO-1E": "c1", "COSMO-2E": "c2"}
         self.ensemble_mapping: dict[str | int | None, str | None] = {
@@ -193,6 +198,20 @@ class GribRetriever(BaseRetriever):
         xarray.Dataset
             Merged dataset containing the processed local SEN data.
         """
+
+        if (
+            _MDL_DATA_SOURCE is None
+            or _MDL_GRIB_DECODER is None
+            or _MDL_GEO_COORDS is None
+        ):
+            raise ImportError(
+                "GribRetriever requires 'meteodata-lab' and its GRIB dependencies. "
+                "Install it to use this retriever."
+            )
+        data_source = _MDL_DATA_SOURCE
+        grib_decoder = _MDL_GRIB_DECODER
+        _geo_coords = _MDL_GEO_COORDS
+
         # check if eccodes is installed.
         # there are two things that can go wrong here:
         # 1. eccodes is not installed

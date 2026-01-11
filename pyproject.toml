@@ -10,7 +10,7 @@ readme = "README.md"
 authors = [
     { name = "Ophélia Miralles", email = "opheliamiralles@gmail.com" }
 ]
-requires-python = ">=3.10"
+requires-python = "==3.12.*"
 dependencies = [
     "geopandas>=1.0.1",
     "httpx>=0.28.1",
@@ -20,6 +20,9 @@ dependencies = [
     "wradlib>=2.4.0",
     "xarray>=2025.6.1",
     "zarr>=2.18.3",
+    "python-geotiepoints>=1.8.0",
+    "coda>=0.1.0",
+    "future>=1.0.0",
 ]
 
 [project.optional-dependencies]
@@ -35,7 +38,6 @@ GribRetriever = "weathermart.retrievers:GribRetriever"
 CEDTMRetriever = "weathermart.retrievers:CEDTMRetriever"
 NASADEMRetriever = "weathermart.retrievers:NASADEMRetriever"
 DHM25Retriever = "weathermart.retrievers:DHM25Retriever"
-DWHRetriever = "weathermart.retrievers:DWHRetriever"
 FDBRetriever = "weathermart.retrievers:FDBRetriever"
 OperaRetriever = "weathermart.retrievers:OperaRetriever"
 EumetsatRetriever = "weathermart.retrievers:EumetsatRetriever"
