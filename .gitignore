@@ -19,10 +19,13 @@ uv.lock
 *credentials.json
 
 #jobs
-*.sh
+run*.sh
+submit*.sh
 logs
+*.csv
 
 #examples
 examples
 *.png
 *_bris.py
+plots

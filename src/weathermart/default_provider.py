@@ -27,6 +27,7 @@ def available_retrievers() -> tuple[BaseRetriever, ...]:
             if isinstance(instance, BaseRetriever):
                 retrievers.append(instance)
         except:
+            print(f"Failed loading retriever plugin {plugin.name}")
             pass
 
     retrievers.sort(key=lambda r: (r.priority, r.__class__.__name__), reverse=True)

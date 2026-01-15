@@ -198,7 +198,7 @@ class CacheRetriever:
             else:
                 for date in dates:
                     day_start = pd.to_datetime(date)
-                    day_end = pd.to_datetime(day_start + pd.to_timedelta("23h50m"))
+                    day_end = pd.to_datetime(day_start + pd.to_timedelta("23h59m"))
                     date_str = date.strftime("%Y%m%d")
                     p = (
                         self.path

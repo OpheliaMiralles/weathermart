@@ -96,7 +96,7 @@ class DataRetriever(BaseRetriever):
                 )
                 if not ds[time_dim].to_index().is_monotonic_increasing:
                     raise RuntimeError(
-                        "Time coordinate for retriever {r}, source {source} and date {dates} is not sorted."
+                        f"Time coordinate for retriever {r}, source {source} and date {dates} is not sorted."
                     )
                 if not rename:
                     return ds

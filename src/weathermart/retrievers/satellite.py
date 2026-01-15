@@ -101,7 +101,8 @@ EUMETSAT_SOURCES = {
             "iasi_radiances": {
                 "code": "EO:EUM:DAT:METOP:IASIL1C-ALL",
                 "variables": ["temp_15um", "swir_36um"],
-                "round_time": "1440min",
+                "valid_times": slice("09:00:00", "21:00:00"),
+                "round_time": "770min",
                 "native_res": "12km",
                 "reader": "coda",
                 "format": ".nat",
@@ -112,6 +113,7 @@ EUMETSAT_SOURCES = {
             "ascat_coastal_winds": {
                 "code": "EO:EUM:DAT:METOP:OSI-104",
                 "native_res": "12.5km",
+                "valid_times": slice("09:00", "21:00"),
                 "variables": [
                     "wvc_index",
                     "model_speed",
@@ -124,7 +126,7 @@ EUMETSAT_SOURCES = {
                     "bs_distance",
                 ],
                 "reader": "xarray_ascat_winds",
-                "round_time": "1440min",
+                "round_time": "770min",
                 "format": ".nc",
                 "description": (
                     "High-resolution coastal ASCAT winds (Metop-B). "
@@ -491,14 +493,22 @@ class EumetsatRetriever(BaseRetriever):
                     + str(available_readers())
                 )
             satpy_vars = list(set(product_cfg["variables"]).intersection(set([v[0] for v in variables])))
+            if len(satpy_vars) == 0:
+                logger.info(
+                    f"No requested variables found in product {prod_name}, skipping."
+                )
+                continue
             round_time = product_cfg.get("round_time", None)
             round_time = int(round_time.replace("min", "")) if round_time else None
+            valid_times = product_cfg.get("valid_times", None)
             collection = datastore.get_collection(collection_id)
             ds_list = []
 
             for date in dates:
-                start = datetime.datetime.combine(date, datetime.time.min)
-                end = start + datetime.timedelta(days=1) - datetime.timedelta(minutes=5)
+                start_t = pd.to_timedelta(valid_times.start) if isinstance(valid_times, slice) else pd.to_timedelta("00:00:00")
+                end_t = pd.to_timedelta(valid_times.stop) if isinstance(valid_times, slice) else pd.to_timedelta("23:59:00")
+                start = (date+start_t).to_pydatetime()
+                end = (date+end_t).to_pydatetime()
                 if test:
                     end = start + datetime.timedelta(minutes=30)
 
@@ -541,6 +551,8 @@ class EumetsatRetriever(BaseRetriever):
                 return xr.Dataset()
 
         ds = xr.concat(all_ds, dim="time").sortby("time")
+        for t in ds.time.values:
+            plot_polar(ds, t=t, var=satpy_vars[0])
         ds = ds.assign_attrs(metadata).groupby("time").mean(skipna=True)
         ds["time"] = pd.to_datetime(ds["time"].values).tz_localize(None)
         return ds

@@ -12,7 +12,7 @@ import yrlib
 import yrlib.netatmo
 from weathermart.base import BaseRetriever, checktype
 
-CHUNK_SIZE = 24        # 24 × 5 min = 2 hours per worker
+CHUNK_SIZE = 24  # 24 × 5 min = 2 hours per worker
 MAX_WORKERS = min(12, os.cpu_count() or 4)
 OUT_ROOT = Path("/lustre/storeB/users/opmir9231/netatmo_daily")
 VAR_META = {
@@ -20,12 +20,85 @@ VAR_META = {
     "pr": dict(use="Pressure", units="hPa", name="Pressure", deacc=False),
     "uu": dict(use="Humidity", units="%", name="Humidity", deacc=False),
     "rr": dict(use="Rain", units="mm/h", name="Precipitation rate", deacc=True),
-    "rr_hourly": dict(use="sum_rain_1", units="kg/m^2", name="Hourly precipitation", deacc=False),
+    "rr_hourly": dict(
+        use="sum_rain_1", units="kg/m^2", name="Hourly precipitation", deacc=False
+    ),
     "ff": dict(use="wind", units="m/s", name="Wind speed", deacc=False),
     "dd": dict(use="wind", units="degrees", name="Wind direction", deacc=False),
     "fg": dict(use="wind_gust", units="m/s", name="Wind gust", deacc=False),
 }
 TITAN_VARIABLES = list(VAR_META.keys())
+QC_LIMITS = {
+    "ta": dict(min=-50.0, max=50.0),  # °C
+    "ff": dict(min=0.0, max=80.0),  # m/s
+    "fg": dict(min=0.0, max=120.0),  # m/s (gusts)
+    "rr": dict(min=0.0, max=1000.0),  # mm/h, rate
+    "pr": dict(min=850.0, max=1100.0),  # hPa
+    "uu": dict(min=0.0, max=100.0),  # %
+    "dd": dict(min=0.0, max=360.0),  # degrees
+    "rr_hourly": dict(min=0.0, max=500.0),  # mm/h, hourly total
+    "altitude": dict(min=-50.0, max=5000.0),  # m
+}
+
+
+def qc(
+    da: xr.DataArray,
+    varname: str,
+) -> tuple[xr.DataArray, xr.DataArray | None]:
+    """
+    Apply physical range QC and return:
+      - QC'ed DataArray (out-of-range → NaN)
+      - Boolean flag per sample indicating presence of NaNs in original data
+      - Filled DataArray (forward/backward fill to replace NaNs in time and buddy fill to replace NaNs in space if densify=True)
+    """
+    if varname not in QC_LIMITS:
+        da_qc = da
+    else:
+        vmin = QC_LIMITS[varname]["min"]
+        vmax = QC_LIMITS[varname]["max"]
+        da_qc = da.where((da >= vmin) & (da <= vmax))
+    has_nan = da_qc.isnull()
+    da_qc.attrs.update(
+        qc_method="physical_range",
+        qc_min=QC_LIMITS.get(varname, {}).get("min"),
+        qc_max=QC_LIMITS.get(varname, {}).get("max"),
+    )
+    da = da_qc
+    qc_flag = has_nan.astype("uint8")
+    qc_flag.name = f"{varname}_is_nan"
+    return da_qc, qc_flag
+
+
+def pack_isnan_flags(
+    ds: xr.Dataset, varnames: list[str], name: str = "has_nan"
+) -> xr.Dataset:
+    qc = xr.zeros_like(ds[varnames[0]], dtype="uint64")
+
+    for k, v in enumerate(varnames):
+        bit = ds[v].astype("uint64")
+        qc = qc | (bit << np.uint64(k))
+
+    qc = qc.rename(name)
+    qc.attrs["qc_bit_layout"] = "bit k: 1 means flag=true for var k"
+    qc.attrs["qc_vars"] = ",".join(varnames)
+    return ds.drop_vars(varnames).assign({name: qc})
+
+
+def unpack_isnan_flag(qc_flag: xr.DataArray, k: int) -> xr.DataArray:
+    return ((qc_flag >> np.uint64(k)) & np.uint64(1)).astype("uint8")
+
+def decode_qc_flags(ds: xr.Dataset, flag_var: str = "has_nan") -> xr.Dataset:
+    """
+    Decode individual variable flags from a packed uint64 flag variable.
+    """
+    mapping_flags = {i: f"{v}_is_nan" for i, v in enumerate(ds.variables)}
+    if flag_var not in ds:
+            raise KeyError(f"{flag_var} not in dataset")
+    out = {}
+    for bit, name in mapping_flags.items():
+        out[name] = ((ds[flag_var] >> np.uint64(bit)) & np.uint64(1)).astype("uint8")
+    return xr.Dataset(out, coords=ds.coords, attrs={"decoded_from": flag_var})
+
 
 def read_json_all(filename, latrange=None, lonrange=None):
     data = {}
@@ -57,7 +130,9 @@ def read_json_all(filename, latrange=None, lonrange=None):
         lat = float(entry["location"][1])
         lon = float(entry["location"][0])
         if check_latlon:
-            if not (latrange[0] <= lat <= latrange[1] and lonrange[0] <= lon <= lonrange[1]):
+            if not (
+                latrange[0] <= lat <= latrange[1] and lonrange[0] <= lon <= lonrange[1]
+            ):
                 continue
 
         elev = entry.get("altitude", np.nan)
@@ -82,6 +157,7 @@ def read_json_all(filename, latrange=None, lonrange=None):
                     pass
 
     return data
+
 
 def get_multi(
     unixtimes,
@@ -178,7 +254,11 @@ def get_multi(
 
 
 def netatmo_to_xarray(datetimes):
-    unixtime = [(pd.to_datetime(d)-pd.to_datetime("1970-01-01T00:00:00Z")).total_seconds() for d in pd.to_datetime(datetimes)]
+    unixtime = [
+        (pd.to_datetime(d) - pd.to_datetime("1970-01-01T00:00:00Z")).total_seconds()
+        for d in pd.to_datetime(datetimes)
+    ]
+
     def point_to_xarray(p, varname):
         time = pd.to_datetime(p.times, unit="s", utc=True)
 
@@ -189,9 +269,7 @@ def netatmo_to_xarray(datetimes):
         alt = np.array([loc.elev for loc in locs])
 
         ds = xr.Dataset(
-            data_vars={
-                varname: (("time", "location"), p.values)
-            },
+            data_vars={varname: (("time", "location"), p.values)},
             coords=dict(
                 time=time,
                 location=("location", loc_id),
@@ -220,27 +298,24 @@ def netatmo_to_xarray(datetimes):
         datasets.append(ds_v)
     ds = xr.merge(
         datasets,
-        join="outer",        
+        join="outer",
         compat="no_conflicts",
     )
     return ds
+
 
 def netatmo_to_xarray_parallel(datetimes):
     datetimes = pd.to_datetime(datetimes)
     datetimes = datetimes.sort_values()
     blocks = [
-        datetimes[i:i + CHUNK_SIZE]
-        for i in range(0, len(datetimes), CHUNK_SIZE)
+        datetimes[i : i + CHUNK_SIZE] for i in range(0, len(datetimes), CHUNK_SIZE)
     ]
     print("Total blocks:", len(blocks), flush=True)
 
     datasets = []
 
     with ProcessPoolExecutor(max_workers=MAX_WORKERS) as ex:
-        futures = {
-            ex.submit(_worker_netatmo_block, block): block
-            for block in blocks
-        }
+        futures = {ex.submit(_worker_netatmo_block, block): block for block in blocks}
 
         for fut in as_completed(futures):
             ds = fut.result()
@@ -261,9 +336,16 @@ def netatmo_to_xarray_parallel(datetimes):
     ds["time"] = pd.to_datetime(ds.time.values).tz_localize(None)
     return ds
 
+
 def _worker_netatmo_block(datetimes_block):
     try:
-        print("Processing block:", datetimes_block[0], "to", datetimes_block[-1], flush=True)
+        print(
+            "Processing block:",
+            datetimes_block[0],
+            "to",
+            datetimes_block[-1],
+            flush=True,
+        )
         return netatmo_to_xarray(datetimes_block)
     except Exception as e:
         print(f"[WARN] block failed: {e}", flush=True)
@@ -284,48 +366,90 @@ class NetAtmoRetriever(BaseRetriever):
         source: str,
         variables: list[tuple[str, dict]],
         dates: datetime.date | str | pd.Timestamp | list[Any],
-        datahall: str = "/lustre/storeB",
-        latrange: list[float] | None = None,
-        lonrange: list[float] | None = None,
         freq: str = "5min",
+        *,
+        do_qc: bool = True,
+        pack_nan_flags: bool = True,
+        round_decimals: int = 4,
     ) -> xr.Dataset:
-
         dates, variables = checktype(dates, variables)
-        unique_dates = list(set(pd.to_datetime(d).date() for d in dates))
-        datasets = []
-        for d in pd.to_datetime(unique_dates).tz_localize("UTC"):
+        varnames_req = [vname for vname, _ in variables]
+        unique_days = sorted(set(pd.to_datetime(d).date() for d in dates))
+
+        day_datasets: list[xr.Dataset] = []
+        for d in pd.to_datetime(unique_days).tz_localize("UTC"):
             times = pd.date_range(
                 d,
-                d + pd.Timedelta(days=1)-pd.Timedelta(minutes=5),
+                d + pd.Timedelta(days=1) - pd.Timedelta(minutes=5),
                 freq=freq,
                 inclusive="left",
                 tz="UTC",
             )
+
             ds = netatmo_to_xarray_parallel(times)
             if ds is None or len(ds.data_vars) == 0:
                 print(f"{d:%Y-%m-%d} → no data", flush=True)
                 continue
-            for v in ds.variables:
+
+            for v in ds.data_vars:
                 ds[v].encoding.clear()
-            ds = ds.chunk(dict(time=-1, location=5000))
-            datasets.append(ds)
 
-        varnames = [vname for vname, _ in variables]
-        if not datasets:
+            lon = np.round(ds["longitude"].values.astype(np.float64), round_decimals)
+            lat = np.round(ds["latitude"].values.astype(np.float64), round_decimals)
+            lon[lon == -0.0] = 0.0
+            lat[lat == -0.0] = 0.0
+            loc_id = np.char.add(
+                np.char.mod(f"%.{round_decimals}f", lon),
+                np.char.add("_", np.char.mod(f"%.{round_decimals}f", lat)),
+            )
+
+            ds = ds.assign_coords(id=("location", loc_id)).swap_dims({"location": "id"})
+            ds = ds.drop_vars("location")
+            idx = pd.Index(ds["id"].values)
+            keep = ~idx.duplicated(keep="first")
+            ds = ds.isel(id=np.where(keep)[0])
+            ds["time"] = pd.to_datetime(ds.time.values).tz_localize(None)
+            keep_vars = [v for v in varnames_req if v in ds.data_vars]
+            ds = ds[keep_vars]
+            if do_qc:
+                out_vars: dict[str, xr.DataArray] = {}
+                nan_flag_names: list[str] = []
+
+                for v in keep_vars:
+                    da_qc, qc_flag = qc(ds[v], v)
+                    out_vars[v] = da_qc
+                    out_vars[qc_flag.name] = qc_flag
+                    nan_flag_names.append(qc_flag.name)
+
+                ds = xr.Dataset(out_vars, coords=ds.coords, attrs=ds.attrs)
+                if pack_nan_flags and nan_flag_names:
+                    ds = pack_isnan_flags(ds, nan_flag_names, name="has_nan")
+
+            chunk_spec = {}
+            if "time" in ds.dims:
+                chunk_spec["time"] = -1
+            if "id" in ds.dims:
+                chunk_spec["id"] = 5000
+            ds = ds.chunk(chunk_spec)
+
+            ds.attrs["source"] = "Netatmo"
+            ds.attrs["provider"] = "YR / MET Norway"
+            day_datasets.append(ds)
+
+        if not day_datasets:
             return xr.Dataset()
-        if len(datasets) == 1:
-            ds = datasets[0]
-        else:
-            ds = xr.concat(
-                datasets,
-                dim="time",
-                join="outer",
-                compat="no_conflicts",
-                coords="minimal",
-            ).sortby("time")
-        ds = ds[[v for v in varnames if v in ds.data_vars]]
-        ds.attrs["source"] = "Netatmo"
-        ds.attrs["provider"] = "YR / MET Norway"
-        ds["time"] = pd.to_datetime(ds.time.values).tz_localize(None)
-        return ds
 
+        if len(day_datasets) == 1:
+            return day_datasets[0]
+
+        ds_all = xr.concat(
+            day_datasets,
+            dim="time",
+            join="outer",
+            compat="no_conflicts",
+            coords="minimal",
+        ).sortby("time")
+
+        ds_all.attrs["source"] = "Netatmo"
+        ds_all.attrs["provider"] = "YR / MET Norway"
+        return ds_all

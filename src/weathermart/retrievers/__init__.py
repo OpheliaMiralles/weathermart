@@ -7,3 +7,4 @@ from weathermart.retrievers.radar import OperaRetriever as OperaRetriever
 from weathermart.retrievers.satellite import EumetsatRetriever as EumetsatRetriever
 from weathermart.retrievers.titan import TitanRetriever as TitanRetriever
 from weathermart.retrievers.netatmo import NetAtmoRetriever as NetAtmoRetriever
+from weathermart.retrievers.radar import NordicRadarRetriever as NordicRadarRetriever

@@ -94,3 +94,18 @@ def distance_from_coordinates(
     )
     d = 2 * r * np.arcsin(np.sqrt(a))
     return d
+
+def assign_latlon_coords(
+    ds: Any,
+    x_dim: str = "x",
+    y_dim: str = "y",
+    crs: str = SWISS_EPSG,
+) -> Any:
+    """
+    Assign latitude and longitude coordinates to an xarray Dataset based on its x and y dimensions.
+    """
+    ds = ds.rio.write_crs(crs, inplace=True)
+    ds = ds.rio.write_coordinate_system(inplace=True)
+    ds = ds.rio.reproject("epsg:4326")
+    ds = ds.rename({ds.rio.x_dim: "lon", ds.rio.y_dim: "lat"})
+    return ds
