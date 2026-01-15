@@ -620,6 +620,8 @@ class EumetsatRetriever(BaseRetriever):
                 return xr.Dataset()
 
         ds = xr.concat(all_ds, dim="time").sortby("time")
+        for t in ds.time.values:
+            plot_polar(ds, t=t, var=satpy_vars[0])
         ds = ds.assign_attrs(metadata).groupby("time").mean(skipna=True)
         ds["time"] = pd.to_datetime(ds["time"].values).tz_localize(None)
         return ds
