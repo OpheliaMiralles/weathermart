@@ -8,7 +8,9 @@ from weathermart.base import BaseRetriever
 from weathermart.provide import CacheRetriever
 from weathermart.provide import DataProvider
 
-DEFAULT_CACHE = Path("/lustre/storeB/users/")/os.environ['USER']
+DEFAULT_CACHE = Path("/lustre/storeB/users/") / os.environ["USER"]
+
+
 def available_retrievers() -> Sequence[BaseRetriever]:
     """
     Get all available retriever instances.

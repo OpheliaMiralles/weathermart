@@ -148,14 +148,35 @@ EUMETSAT_SOURCES = {
             },
             "atms_radiances": {
                 "code": "EO:EUM:DAT:0345",
-                "variables": ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22"],
+                "variables": [
+                    "1",
+                    "2",
+                    "3",
+                    "4",
+                    "5",
+                    "6",
+                    "7",
+                    "8",
+                    "9",
+                    "10",
+                    "11",
+                    "12",
+                    "13",
+                    "14",
+                    "15",
+                    "16",
+                    "17",
+                    "18",
+                    "19",
+                    "20",
+                    "21",
+                    "22",
+                ],
                 "valid_times": slice("09:00:00", "21:00:00"),
                 "native_res": "16km",
                 "reader": "atms_l1b_nc",
                 "format": ".nc",
-                "description": (
-                    "MW radiances. 22 spectral channels."
-                ),
+                "description": ("MW radiances. 22 spectral channels."),
             },
             "mhs_radiances": {
                 "code": "EO:EUM:DAT:METOP:MHSL1",
@@ -164,9 +185,7 @@ EUMETSAT_SOURCES = {
                 "native_res": "16km",
                 "reader": "mhs_l1c_aapp",
                 "format": ".nat",
-                "description": (
-                    "MW radiances. 5 spectral channels."
-                ),
+                "description": ("MW radiances. 5 spectral channels."),
             },
         },
     },
@@ -447,7 +466,9 @@ class EumetsatRetriever(BaseRetriever):
         def process_products(products):
             datasets = []
 
-            with TemporaryDirectory(dir="/lustre/storeB/users/"+os.environ['USER']+"/tmp") as tmpdir:
+            with TemporaryDirectory(
+                dir="/lustre/storeB/users/" + os.environ["USER"] + "/tmp"
+            ) as tmpdir:
 
                 @retry_download
                 def _download(prod):
@@ -755,19 +776,25 @@ def plot_polar(ds, t, var):
     fig = plt.figure(figsize=(7, 7))
     ax = plt.axes(projection=proj)
     gl = ax.gridlines(
-    crs=ccrs.PlateCarree(),
-    draw_labels=False,
-    linewidth=0.5,
-    color="gray",
-    alpha=0.7,
-    linestyle="--")
+        crs=ccrs.PlateCarree(),
+        draw_labels=False,
+        linewidth=0.5,
+        color="gray",
+        alpha=0.7,
+        linestyle="--",
+    )
     gl.xlocator = mticker.FixedLocator(np.arange(-180, 181, 30))  # meridians
     gl.ylocator = mticker.FixedLocator(np.arange(60, 91, 10))
     ax.coastlines(linewidth=0.8)
-    #ax.set_extent([xmin, xmax, ymin, ymax], crs=proj)
+    # ax.set_extent([xmin, xmax, ymin, ymax], crs=proj)
     ax.set_extent([xmin - dx, xmax + dx, ymin - dy, ymax + dy], crs=proj)
     pm = ax.scatter(x, y, c=val, transform=proj, cmap="viridis", s=10)
     plt.colorbar(pm, ax=ax, shrink=0.7)
-    plt.title(f"Gridded polar stereographic")
+    plt.title("Gridded polar stereographic")
     fig.tight_layout(pad=0.3)
-    plt.savefig(f"{var}_{pd.to_datetime(t).strftime('%Y%m%d_%H%M%S')}.png", dpi=150, bbox_inches="tight", pad_inches=0.3)
+    plt.savefig(
+        f"{var}_{pd.to_datetime(t).strftime('%Y%m%d_%H%M%S')}.png",
+        dpi=150,
+        bbox_inches="tight",
+        pad_inches=0.3,
+    )
