@@ -66,7 +66,7 @@ class CacheRetriever:
     def provide(
         self,
         source: str,
-        variables: list[tuple[str, dict]],
+        variables: list[str] | str,
         dates: datetime.date | str | pd.Timestamp | list[Any],
         is_static: bool = False,
         kwargs_str: str = "",
@@ -78,7 +78,7 @@ class CacheRetriever:
         ----------
         source : str
             Identifier of the data source.
-        variables : list of tuple (str, dict)
+        variables : list of str
             List of variable definitions (variable name and parameters).
         dates : list of datetime.date or datetime.date
             The date or dates for which to load cached data.
@@ -96,7 +96,7 @@ class CacheRetriever:
         """
         dates, variables = checktype(dates, variables)
         data = []
-        missing_vars: dict[pd.Timestamp, list[tuple[str, dict[Any, Any]]]] = {
+        missing_vars: dict[pd.Timestamp, list[str]] = {
             date: [] for date in dates
         }
         for date in dates:
@@ -104,12 +104,12 @@ class CacheRetriever:
             to_merge = []
             for variable in variables:
                 if not is_static:
-                    p = self.path / f"{source}{kwargs_str}/{date_str}/{variable[0]}"
+                    p = self.path / f"{source}{kwargs_str}/{date_str}/{variable}"
                 else:
                     # date irrelevant for static variables
                     p = self.path / f"{source}{kwargs_str}/{variable[0]}"
                 if p.exists() and any(p.iterdir()):
-                    to_merge.append(xr.open_zarr(p.parent, consolidated=False)[variable[0]])
+                    to_merge.append(xr.open_zarr(p.parent, consolidated=False)[variable])
                 else:
                     missing_vars[date].append(variable)
             if len(to_merge) > 0:
@@ -145,7 +145,7 @@ class CacheRetriever:
         self,
         data: xr.Dataset,
         source: str,
-        variables: list[tuple[str, dict]],
+        variables: list[str] | str,
         dates: list[datetime.date] | datetime.date,
         is_static: bool = False,
         kwargs_str: str = "",
@@ -278,17 +278,6 @@ class DataProvider:
         self.retriever = DataRetriever(retrievers)
         self.cache = cache
 
-    def get_variable_mapping(self, source: str) -> dict[Any, Any]:
-        """
-        Get variable mapping for the specified source.
-        """
-        retrievers = self.retriever.subretrievers
-        mapping_vars = {}
-        for r in retrievers:
-            if source.upper() in r.sources:
-                mapping_vars = r.variables
-        return mapping_vars
-
     def get_crs(self, source: str) -> str | dict[str, str] | None:
         """
         Get the coordinate reference system (CRS) for the given source.
@@ -386,7 +375,7 @@ class DataProvider:
     def provide(
         self,
         source: str,
-        variables: list[tuple[str, dict]],
+        variables: list[str] | str,
         dates: datetime.date | str | pd.Timestamp | list[Any],
         **kwargs: Any,
     ) -> xr.Dataset:
@@ -426,7 +415,7 @@ class DataProvider:
             logging.warning(
                 "Reading %s %s data from cache for %s",
                 source,
-                ",".join([v[0] for v in variables]),
+                ",".join(variables),
                 date,
             )
             if self.cache is not None:
@@ -464,12 +453,12 @@ class DataProvider:
             if missing_vars:
                 logging.warning(
                     "Couldn't find %s in cache for %s",
-                    ",".join([m[0] for m in missing_vars]),
+                    ",".join(missing_vars),
                     date,
                 )
                 logging.warning(
                     "Retrieving %s from source %s",
-                    ",".join([m[0] for m in missing_vars]),
+                    ",".join(missing_vars),
                     source,
                 )
                 kwargs_copy = copy.deepcopy(kwargs)

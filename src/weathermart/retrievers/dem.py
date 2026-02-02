@@ -124,7 +124,7 @@ class DHM25Retriever(DEMRetriever):
     """
 
     sources = ("DHM25",)
-    variables = {s.lower(): [s.lower()] for s in sources}
+    variables = [s.lower() for s in sources]
     crs = "epsg:3035"
 
     @staticmethod
@@ -208,7 +208,7 @@ class CEDTMRetriever(DEMRetriever):
     """
 
     sources = ("CEDTM",)
-    variables = {s.lower(): [s.lower()] for s in sources}
+    variables = [s.lower() for s in sources]
     crs = "epsg:2056"
 
     @classmethod
@@ -316,7 +316,7 @@ class NASADEMRetriever(DEMRetriever):
     """
 
     sources = ("NASADEM",)
-    variables = {s.lower(): [s.lower()] for s in sources}
+    variables = [s.lower() for s in sources]
     crs = "epsg:4326"
 
     @classmethod

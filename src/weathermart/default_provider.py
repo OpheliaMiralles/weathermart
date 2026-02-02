@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Sequence
 from importlib.metadata import entry_points
 from pathlib import Path
 
@@ -7,7 +8,7 @@ from weathermart.provide import CacheRetriever
 from weathermart.provide import DataProvider
 
 DEFAULT_CACHE = Path("/lustre/storeB/users/opmir9231/")
-def available_retrievers() -> tuple[BaseRetriever, ...]:
+def available_retrievers() -> Sequence[BaseRetriever]:
     """
     Get all available retriever instances.
 
@@ -26,9 +27,8 @@ def available_retrievers() -> tuple[BaseRetriever, ...]:
                 instance = target()
             if isinstance(instance, BaseRetriever):
                 retrievers.append(instance)
-        except:
-            print(f"Failed loading retriever plugin {plugin.name}")
-            pass
+        except Exception as e:
+            logging.exception("Failed loading retriever plugin %s: %s", plugin.name, e)
 
     retrievers.sort(key=lambda r: (r.priority, r.__class__.__name__), reverse=True)
 

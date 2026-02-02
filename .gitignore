@@ -17,6 +17,7 @@ uv.lock
 
 # credentials
 *credentials.json
+*token.json
 
 #jobs
 run*.sh

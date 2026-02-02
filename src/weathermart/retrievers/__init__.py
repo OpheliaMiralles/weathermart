@@ -3,8 +3,8 @@ from weathermart.retrievers.dem import DHM25Retriever as DHM25Retriever
 from weathermart.retrievers.dem import NASADEMRetriever as NASADEMRetriever
 from weathermart.retrievers.fdb import FDBRetriever as FDBRetriever
 from weathermart.retrievers.grib import GribRetriever as GribRetriever
+from weathermart.retrievers.netatmo import NetAtmoRetriever as NetAtmoRetriever
+from weathermart.retrievers.radar import NordicRadarRetriever as NordicRadarRetriever
 from weathermart.retrievers.radar import OperaRetriever as OperaRetriever
 from weathermart.retrievers.satellite import EumetsatRetriever as EumetsatRetriever
 from weathermart.retrievers.titan import TitanRetriever as TitanRetriever
-from weathermart.retrievers.netatmo import NetAtmoRetriever as NetAtmoRetriever
-from weathermart.retrievers.radar import NordicRadarRetriever as NordicRadarRetriever

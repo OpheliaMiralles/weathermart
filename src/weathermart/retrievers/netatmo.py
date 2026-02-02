@@ -358,13 +358,13 @@ class NetAtmoRetriever(BaseRetriever):
     """
 
     sources = ("NETATMO",)
-    variables = {k: [k] for k in VAR_META.keys()}
+    variables = list(VAR_META.keys())
     crs = "epsg:4326"
 
     def retrieve(
         self,
         source: str,
-        variables: list[tuple[str, dict]],
+        variables: list[str] | str,
         dates: datetime.date | str | pd.Timestamp | list[Any],
         freq: str = "5min",
         *,

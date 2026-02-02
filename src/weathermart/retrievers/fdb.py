@@ -10,12 +10,7 @@ from weathermart.base import BaseRetriever
 from weathermart.base import checktype
 from weathermart.base import variables_metadata
 
-nwp_dic = {
-    k: [k]
-    for k in variables_metadata[
-        variables_metadata.source == "ECCODES_COSMO"
-    ].short_name.unique()
-}
+nwp_dic = list(variables_metadata[variables_metadata.source == "ECCODES_COSMO"].short_name.unique())
 type_mapping = {
     "analysis": {"type": "det", "stream": "enda"},
     "forecast": {"type": "ememb", "stream": "enfo"},
@@ -79,7 +74,7 @@ class FDBRetriever(BaseRetriever):
     def retrieve(
         self,
         source: str,
-        variables: list[tuple[str, dict]],
+        variables: list[str] | str,
         dates: datetime.date | str | pd.Timestamp | list[Any],
         datatype: str = "analysis",
         ensemble_members: list[int] | int | None = 0,

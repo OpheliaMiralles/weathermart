@@ -1,4 +1,5 @@
 import datetime
+from collections.abc import Sequence
 from typing import Any
 
 import pandas as pd
@@ -6,7 +7,6 @@ import xarray as xr
 
 from weathermart.base import BaseRetriever
 from weathermart.base import checktype
-from weathermart.base import variables_metadata
 
 
 class DataRetriever(BaseRetriever):
@@ -24,15 +24,14 @@ class DataRetriever(BaseRetriever):
         A list of retriever instances used to fetch data.
     """
 
-    def __init__(self, subretrievers: tuple[BaseRetriever, ...]) -> None:
+    def __init__(self, subretrievers: Sequence[BaseRetriever]) -> None:
         self.subretrievers = subretrievers
 
     def retrieve(
         self,
         source: str,
-        variables: list[tuple[str, dict]],
+        variables: list[str] | str,
         dates: datetime.date | str | pd.Timestamp | list[Any],
-        rename: bool = False,
         **kwargs: Any,
     ) -> xr.Dataset:
         """
@@ -77,12 +76,12 @@ class DataRetriever(BaseRetriever):
         for r in self.subretrievers:
             variables_to_retrieve = []
             if source.upper() in r.sources:
-                for vname, props in variables:
+                for vname in variables:
                     if vname not in r.variables:
                         raise ValueError(
                             f"Variables {vname} not defined for source {source}"
                         )
-                    variables_to_retrieve.append((vname, props))
+                    variables_to_retrieve.append(vname)
                 retriever_kwargs = r.get_kwargs()
                 relevant_kwargs = {
                     k: kwargs[k] for k in retriever_kwargs if k in kwargs
@@ -98,20 +97,5 @@ class DataRetriever(BaseRetriever):
                     raise RuntimeError(
                         f"Time coordinate for retriever {r}, source {source} and date {dates} is not sorted."
                     )
-                if not rename:
-                    return ds
-                var_names = [m[0] for m in variables_to_retrieve]
-                ds = ds.rename(
-                    {
-                        k[next(i for i, v in enumerate(k) if v in ds)]: j
-                        for j, k in r.variables.items()
-                        if j in var_names and any(v in ds for v in k)
-                    }
-                )
-                vars_retrieved = [v for v in var_names if v in ds.data_vars]
-                ds = ds[vars_retrieved]
-                for variable in vars_retrieved:
-                    if variable in variables_metadata:
-                        ds[variable].attrs.update(variables_metadata[variable])
                 return ds
         raise ValueError(f"No retriever defined for source {source}")

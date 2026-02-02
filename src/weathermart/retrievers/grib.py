@@ -13,21 +13,13 @@ from weathermart.base import BaseRetriever
 from weathermart.base import checktype
 from weathermart.base import variables_metadata
 
+
 class GribRetriever(BaseRetriever):
     """
     Retriever for grib data stored on disk.
     """
 
     def __init__(self) -> None:
-        from meteodatalab import data_source
-        from meteodatalab import grib_decoder
-        from meteodatalab.ogd_api import _geo_coords
-        nwp_dic = {
-            k: [k]
-            for k in variables_metadata[
-                variables_metadata.source == "ECCODES_COSMO"
-            ].short_name.unique()
-        }
         self.type_mapping = {"forecast": "FCST", "analysis": "ANA", "first_guess": "FG"}
         self.prefix_mapping = {"ICON-CH1-EPS": "i1", "COSMO-1E": "c1", "COSMO-2E": "c2"}
         self.ensemble_mapping: dict[str | int | None, str | None] = {
@@ -42,7 +34,9 @@ class GribRetriever(BaseRetriever):
             self.ensemble_mapping[i] = f"{i:03}"
 
         self.sources = ("KENDA-CH1", "ICON-CH1-EPS", "COSMO-1E", "COSMO_2E")
-        self.variables = nwp_dic
+        self.variables = list(
+            variables_metadata[variables_metadata.source == "ECCODES_COSMO"].short_name.unique()
+        )
         self.crs = "epsg:4326"
 
     @staticmethod
@@ -151,7 +145,7 @@ class GribRetriever(BaseRetriever):
     def retrieve(
         self,
         source: str,
-        variables: list[tuple[str, dict[str, Any]]],
+        variables: list[str] | str,
         dates: datetime.date | str | pd.Timestamp | list[Any],
         path_to_grib: Path | str | None = None,
         datatype: list[str] = ["analysis"],
@@ -195,6 +189,10 @@ class GribRetriever(BaseRetriever):
         # there are two things that can go wrong here:
         # 1. eccodes is not installed
         # 2. eccodes is installed but the library is not found
+        from meteodatalab import data_source
+        from meteodatalab import grib_decoder
+        from meteodatalab.ogd_api import _geo_coords
+
         if path_to_grib is None:
             self.path = None
         elif isinstance(path_to_grib, str):

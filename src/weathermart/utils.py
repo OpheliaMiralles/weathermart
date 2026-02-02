@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from math import cos, radians
+from pyproj import CRS, Transformer
 
 ICON_DOMAIN = (0.5, 43, 16.5, 50)
 NORDIC_DOMAIN = (-8.08, 53.14, 40.73, 73.06)
@@ -95,17 +95,37 @@ def distance_from_coordinates(
     d = 2 * r * np.arcsin(np.sqrt(a))
     return d
 
+def reproject(
+    x_coords: np.ndarray | list | tuple,
+    y_coords: np.ndarray | list | tuple,
+    src_crs: CRS | str,
+    dst_crs: CRS | str,
+):
+    # Local copy to avoid circular import with interp2grid/destaggering
+    transformer = Transformer.from_crs(src_crs, dst_crs, always_xy=True)
+    return transformer.transform(x_coords, y_coords)
+
 def assign_latlon_coords(
-    ds: Any,
-    x_dim: str = "x",
-    y_dim: str = "y",
+    array: Any,
     crs: str = SWISS_EPSG,
 ) -> Any:
-    """
-    Assign latitude and longitude coordinates to an xarray Dataset based on its x and y dimensions.
-    """
-    ds = ds.rio.write_crs(crs, inplace=True)
-    ds = ds.rio.write_coordinate_system(inplace=True)
-    ds = ds.rio.reproject("epsg:4326")
-    ds = ds.rename({ds.rio.x_dim: "lon", ds.rio.y_dim: "lat"})
-    return ds
+    geodims = [d for d in array.dims if d in ("x", "y", "station", "cell")]
+    if len(geodims) < 2 and crs == "epsg:4326" and "x" in array.coords:
+        return array.assign_coords(longitude=array.x.values, latitude=array.y.values)
+    if geodims == ["y", "x"]:
+        xv, yv = np.meshgrid(array.x.values, array.y.values)
+        lon, lat = (
+            (xv, yv)
+            if crs == "epsg:4326"
+            else reproject(xv, yv, crs, CRS.from_user_input("epsg:4326"))
+        )
+        return array.assign_coords(
+            longitude=(("y", "x"), lon), latitude=(("y", "x"), lat)
+        )
+    xv, yv = np.meshgrid(array.x.values, array.y.values, indexing="ij")
+    lon, lat = (
+        reproject(xv, yv, crs, CRS.from_user_input("epsg:4326"))
+        if crs != "epsg:4326"
+        else (xv, yv)
+    )
+    return array.assign_coords(longitude=(("x", "y"), lon), latitude=(("x", "y"), lat))

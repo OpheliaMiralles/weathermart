@@ -7,6 +7,7 @@ import xarray as xr
 
 from weathermart.base import BaseRetriever
 from weathermart.base import checktype
+
 TITAN_VARS = [
     "precipitation_amount_ens-raw_ens_mean",
     "precipitation_amount_ens-force_range_control",
@@ -27,7 +28,7 @@ class TitanRetriever(BaseRetriever):
 
     sources = ("TITAN",)
     crs = "epsg:4326"
-    variables = {k: [k] for k in TITAN_VARS}
+    variables = list(TITAN_VARS)
 
     def __init__(
         self,
@@ -38,7 +39,7 @@ class TitanRetriever(BaseRetriever):
     def retrieve(
         self,
         source: str,
-        variables: list[tuple[str, dict]],
+        variables: list[str] | str,
         dates: datetime.date | str | pd.Timestamp | list[Any],
     ) -> xr.Dataset:
 

@@ -1,25 +1,28 @@
 import datetime
+import functools
 import glob
 import json
 import logging
 import os
+import re
 import shutil
+import threading
 import time
 import warnings
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
-import functools
-import threading
-import time
-from pathlib import Path
+
+import numpy as np
 import pandas as pd
 import urllib3
 import xarray as xr
-import re
-import numpy as np
-from weathermart.base import BaseRetriever, checktype
-from weathermart.utils import NORDIC_DOMAIN, get_nrows_ncols_from_domain_size_and_reskm
+
+from weathermart.base import BaseRetriever
+from weathermart.base import checktype
+from weathermart.utils import NORDIC_DOMAIN
+from weathermart.utils import get_nrows_ncols_from_domain_size_and_reskm
 
 max_workers = min(os.cpu_count() or 4, 8)
 logger = logging.getLogger(__name__)
@@ -139,7 +142,7 @@ EUMETSAT_SOURCES = {
         "platform": "MTG-I (FCI and LI)",
         "type": "geostationary",
         "freq": "2–10 min",
-        "native_res": "10km",
+        "native_res": "3km",
         "products": {
             "li_flashes": {
                 "code": "EO:EUM:DAT:0686",
@@ -300,12 +303,12 @@ class EumetsatRetriever(BaseRetriever):
 
     crs = "epsg:4326"
     sources = tuple(EUMETSAT_SOURCES.keys())
-    variables = {k: [k] for k in extract_all_variables(EUMETSAT_SOURCES)}
+    variables = extract_all_variables(EUMETSAT_SOURCES)
 
     def retrieve(
         self,
         source: str,
-        variables: list[tuple[str, dict]],
+        variables: list[str] | str,
         dates: datetime.date | str | pd.Timestamp | list[Any],
         *,
         bbox: tuple[float, float, float, float] = NORDIC_DOMAIN,
@@ -351,8 +354,8 @@ class EumetsatRetriever(BaseRetriever):
         try:
             import eumdac
             from pyresample.geometry import AreaDefinition
-            from satpy.scene import Scene
             from satpy.readers.core.config import available_readers
+            from satpy.scene import Scene
         except ImportError as exc:
             raise ImportError("Requires eumdac, satpy, pyresample") from exc
 
@@ -612,7 +615,7 @@ def iasi_metop_to_xarray(
     Read IASI L1C EPS, select physically meaningful spectral bands,
     and regrid to a target AREA.
     """
-    import coda 
+    import coda
     from pyresample.geometry import SwathDefinition
     from pyresample.kd_tree import resample_nearest
     f = coda.open(eps_file)
@@ -626,7 +629,7 @@ def iasi_metop_to_xarray(
     t_eps = np.median(np.asarray(
     coda.fetch(f, "/MDR[0]/MDR/OnboardUTC")
 ))
-    epoch = datetime.datetime(2000, 1, 1, tzinfo=datetime.timezone.utc)
+    epoch = datetime.datetime(2000, 1, 1, tzinfo=datetime.UTC)
     times = epoch + datetime.timedelta(seconds=t_eps) 
     IASI_BANDS = {
     "temp_15um": (650, 770),      # ≈ 13–15.5 µm
@@ -691,12 +694,13 @@ def iasi_metop_to_xarray(
 
 
 def plot_polar(ds, t, var="wind_speed"):
-    import matplotlib.pyplot as plt
     import cartopy.crs as ccrs
+    import matplotlib.pyplot as plt
     from pyproj import Transformer
-
-    lon = ds["lon"].values.ravel()
-    lat = ds["lat"].values.ravel()
+    lon_var = "lon" if "lon" in ds.coords else "longitude"
+    lat_var = "lat" if "lat" in ds.coords else "latitude"
+    lon = ds[lon_var].values.ravel()
+    lat = ds[lat_var].values.ravel()
     val = ds.sel(time=t)[var].values.ravel()
     # Project lon/lat -> polar stereographic meters
     proj = ccrs.NorthPolarStereo()
@@ -704,11 +708,11 @@ def plot_polar(ds, t, var="wind_speed"):
     x, y = transformer.transform(lon, lat)
     xmin, xmax = x.min(), x.max()
     ymin, ymax = y.min(), y.max()
-    fig = plt.figure(figsize=(7, 7))
+    plt.figure(figsize=(7, 7))
     ax = plt.axes(projection=proj)
     ax.coastlines(linewidth=0.8)
     ax.set_extent([xmin, xmax, ymin, ymax], crs=proj)
     pm = ax.scatter(x, y, c=val, transform=proj, cmap="viridis", s=10)
     plt.colorbar(pm, ax=ax, shrink=0.7)
-    plt.title(f"Gridded polar stereographic")
+    plt.title("Gridded polar stereographic")
     plt.savefig(f"polar_{pd.to_datetime(t).strftime('%Y%m%d_%H%M%S')}.png", dpi=150)
