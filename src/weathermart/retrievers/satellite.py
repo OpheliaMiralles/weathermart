@@ -126,7 +126,7 @@ EUMETSAT_SOURCES = {
             "ascat_coastal_winds": {
                 "code": "EO:EUM:DAT:METOP:OSI-104",
                 "native_res": "12.5km",
-                "valid_times": slice("09:00", "21:00"),
+                "valid_times": slice("09:00:00", "21:00:00"),
                 "variables": [
                     "wvc_index",
                     "model_speed",
@@ -144,6 +144,28 @@ EUMETSAT_SOURCES = {
                 "description": (
                     "High-resolution coastal ASCAT winds (Metop-B). "
                     "Improves near-shore wind and precipitation forecasts."
+                ),
+            },
+            "atms_radiances": {
+                "code": "EO:EUM:DAT:0345",
+                "variables": ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22"],
+                "valid_times": slice("09:00:00", "21:00:00"),
+                "native_res": "16km",
+                "reader": "atms_l1b_nc",
+                "format": ".nc",
+                "description": (
+                    "MW radiances. 22 spectral channels."
+                ),
+            },
+            "mhs_radiances": {
+                "code": "EO:EUM:DAT:METOP:MHSL1",
+                "variables": ["1", "2", "3", "4", "5"],
+                "valid_times": slice("09:00:00", "21:00:00"),
+                "native_res": "16km",
+                "reader": "mhs_l1c_aapp",
+                "format": ".nat",
+                "description": (
+                    "MW radiances. 5 spectral channels."
                 ),
             },
         },
@@ -425,7 +447,7 @@ class EumetsatRetriever(BaseRetriever):
         def process_products(products):
             datasets = []
 
-            with TemporaryDirectory(dir="/lustre/storeB/users/opmir9231/tmp") as tmpdir:
+            with TemporaryDirectory(dir="/lustre/storeB/users/"+os.environ['USER']+"/tmp") as tmpdir:
 
                 @retry_download
                 def _download(prod):
@@ -577,8 +599,6 @@ class EumetsatRetriever(BaseRetriever):
                 return xr.Dataset()
 
         ds = xr.concat(all_ds, dim="time").sortby("time")
-        for t in ds.time.values:
-            plot_polar(ds, t=t, var=satpy_vars[0])
         ds = ds.assign_attrs(metadata).groupby("time").mean(skipna=True)
         ds["time"] = pd.to_datetime(ds["time"].values).tz_localize(None)
         return ds
@@ -714,27 +734,40 @@ def iasi_metop_to_xarray(
     return ds, times.replace(tzinfo=None)
 
 
-def plot_polar(ds, t, var="wind_speed"):
+def plot_polar(ds, t, var):
     import cartopy.crs as ccrs
     import matplotlib.pyplot as plt
+    import matplotlib.ticker as mticker
     from pyproj import Transformer
 
-    lon_var = "lon" if "lon" in ds.coords else "longitude"
-    lat_var = "lat" if "lat" in ds.coords else "latitude"
-    lon = ds[lon_var].values.ravel()
-    lat = ds[lat_var].values.ravel()
+    lon = ds["longitude"].values.ravel()
+    lat = ds["latitude"].values.ravel()
     val = ds.sel(time=t)[var].values.ravel()
     # Project lon/lat -> polar stereographic meters
-    proj = ccrs.NorthPolarStereo()
+    central_lon = 15
+    proj = ccrs.NorthPolarStereo(central_longitude=central_lon)
     transformer = Transformer.from_crs("EPSG:4326", proj.proj4_init, always_xy=True)
     x, y = transformer.transform(lon, lat)
     xmin, xmax = x.min(), x.max()
     ymin, ymax = y.min(), y.max()
-    plt.figure(figsize=(7, 7))
+    dx = (xmax - xmin) * 0.05  # 5% buffer
+    dy = (ymax - ymin) * 0.05
+    fig = plt.figure(figsize=(7, 7))
     ax = plt.axes(projection=proj)
+    gl = ax.gridlines(
+    crs=ccrs.PlateCarree(),
+    draw_labels=False,
+    linewidth=0.5,
+    color="gray",
+    alpha=0.7,
+    linestyle="--")
+    gl.xlocator = mticker.FixedLocator(np.arange(-180, 181, 30))  # meridians
+    gl.ylocator = mticker.FixedLocator(np.arange(60, 91, 10))
     ax.coastlines(linewidth=0.8)
-    ax.set_extent([xmin, xmax, ymin, ymax], crs=proj)
+    #ax.set_extent([xmin, xmax, ymin, ymax], crs=proj)
+    ax.set_extent([xmin - dx, xmax + dx, ymin - dy, ymax + dy], crs=proj)
     pm = ax.scatter(x, y, c=val, transform=proj, cmap="viridis", s=10)
     plt.colorbar(pm, ax=ax, shrink=0.7)
-    plt.title("Gridded polar stereographic")
-    plt.savefig(f"polar_{pd.to_datetime(t).strftime('%Y%m%d_%H%M%S')}.png", dpi=150)
+    plt.title(f"Gridded polar stereographic")
+    fig.tight_layout(pad=0.3)
+    plt.savefig(f"{var}_{pd.to_datetime(t).strftime('%Y%m%d_%H%M%S')}.png", dpi=150, bbox_inches="tight", pad_inches=0.3)

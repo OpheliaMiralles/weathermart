@@ -1,4 +1,5 @@
 import logging
+import os
 from collections.abc import Sequence
 from importlib.metadata import entry_points
 from pathlib import Path
@@ -7,9 +8,7 @@ from weathermart.base import BaseRetriever
 from weathermart.provide import CacheRetriever
 from weathermart.provide import DataProvider
 
-DEFAULT_CACHE = Path("/lustre/storeB/users/opmir9231/")
-
-
+DEFAULT_CACHE = Path("/lustre/storeB/users/")/os.environ['USER']
 def available_retrievers() -> Sequence[BaseRetriever]:
     """
     Get all available retriever instances.
