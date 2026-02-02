@@ -96,9 +96,7 @@ class CacheRetriever:
         """
         dates, variables = checktype(dates, variables)
         data = []
-        missing_vars: dict[pd.Timestamp, list[str]] = {
-            date: [] for date in dates
-        }
+        missing_vars: dict[pd.Timestamp, list[str]] = {date: [] for date in dates}
         for date in dates:
             date_str = date.strftime("%Y%m%d")
             to_merge = []
@@ -109,7 +107,9 @@ class CacheRetriever:
                     # date irrelevant for static variables
                     p = self.path / f"{source}{kwargs_str}/{variable[0]}"
                 if p.exists() and any(p.iterdir()):
-                    to_merge.append(xr.open_zarr(p.parent, consolidated=False)[variable])
+                    to_merge.append(
+                        xr.open_zarr(p.parent, consolidated=False)[variable]
+                    )
                 else:
                     missing_vars[date].append(variable)
             if len(to_merge) > 0:
@@ -406,7 +406,9 @@ class DataProvider:
         is_static = self.get_static_flag(source)
         all_cached_data = []
 
-        for date in pd.date_range(dates[0], dates[-1], freq="D", tz="UTC").tz_localize(None):
+        for date in pd.date_range(dates[0], dates[-1], freq="D", tz="UTC").tz_localize(
+            None
+        ):
             dates_to_retrieve = sorted(
                 [d for d in dates if pd.to_datetime(d).date() == date.date()]
             )
@@ -441,7 +443,9 @@ class DataProvider:
                 )
                 cached = chunk_data(cached)
                 if len(
-                    pd.date_range(dates_to_retrieve[0], dates_to_retrieve[-1], freq="D", tz="UTC").tz_localize(None)
+                    pd.date_range(
+                        dates_to_retrieve[0], dates_to_retrieve[-1], freq="D", tz="UTC"
+                    ).tz_localize(None)
                 ) != len(dates_to_retrieve):
                     # the cache returns data for the whole day, but we only want specific datetimes
                     all_cached_data.append(

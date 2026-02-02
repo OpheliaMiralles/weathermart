@@ -21,6 +21,7 @@ TITAN_VARS = [
     "precipitation_amount",
 ]
 
+
 class TitanRetriever(BaseRetriever):
     """
     Retriever for TITAN Nordic analysis diagnostics (hourly).
@@ -32,7 +33,8 @@ class TitanRetriever(BaseRetriever):
 
     def __init__(
         self,
-        root: str | Path = "/lustre/storeB/project/metkl/klinogrid/archive/met_nordic_analysis/v4_work",
+        root: str
+        | Path = "/lustre/storeB/project/metkl/klinogrid/archive/met_nordic_analysis/v4_work",
     ):
         self.root = Path(root)
 
@@ -42,7 +44,6 @@ class TitanRetriever(BaseRetriever):
         variables: list[str] | str,
         dates: datetime.date | str | pd.Timestamp | list[Any],
     ) -> xr.Dataset:
-
         dates, variables = checktype(dates, variables)
         varnames = [v[0] for v in variables]
 
@@ -51,13 +52,7 @@ class TitanRetriever(BaseRetriever):
             day = pd.to_datetime(d)
             y, m, dd = day.strftime("%Y"), day.strftime("%m"), day.strftime("%d")
             folder = self.root / y / m / dd
-            files.extend(
-                sorted(
-                    folder.glob(
-                        f"met_analysis_diagnostic_nordic_*.nc"
-                    )
-                )
-            )
+            files.extend(sorted(folder.glob("met_analysis_diagnostic_nordic_*.nc")))
 
         if not files:
             raise RuntimeError("No TITAN files found.")
@@ -68,7 +63,7 @@ class TitanRetriever(BaseRetriever):
                 engine="netcdf4",
                 parallel=True,
             )
-        except:
+        except Exception:
             ds = xr.open_mfdataset(
                 files,
                 combine="by_coords",
@@ -76,6 +71,14 @@ class TitanRetriever(BaseRetriever):
                 parallel=True,
             )
         keep = [v for v in varnames if v in ds.data_vars]
-        ds = ds[keep].set_coords(["latitude", "longitude", "altitude", "land_area_fraction", "forecast_reference_time"])
+        ds = ds[keep].set_coords(
+            [
+                "latitude",
+                "longitude",
+                "altitude",
+                "land_area_fraction",
+                "forecast_reference_time",
+            ]
+        )
         ds.attrs.update(source="TITAN", provider="MET Norway")
         return ds

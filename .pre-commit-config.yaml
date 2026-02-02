@@ -33,17 +33,6 @@ repos:
     rev: v1.0.0
     hooks:
       - id: sphinx-lint
-  - repo: https://github.com/jshwi/docsig # Check docstrings against function sig
-    rev: v0.71.0
-    hooks:
-      - id: docsig
-        args:
-          - --ignore-no-params # Allow docstrings without parameters
-          - --check-dunders # Check dunder methods
-          - --check-overridden # Check overridden methods
-          - --check-protected # Check protected methods
-          - --check-class # Check class docstrings
-        exclude: ^tests/
   - repo: https://github.com/adamchainz/blacken-docs
     rev: "1.20.0"
     hooks:

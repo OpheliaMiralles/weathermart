@@ -8,7 +8,8 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from pyproj import CRS, Transformer
+from pyproj import CRS
+from pyproj import Transformer
 
 ICON_DOMAIN = (0.5, 43, 16.5, 50)
 NORDIC_DOMAIN = (-8.08, 53.14, 40.73, 73.06)
@@ -17,11 +18,11 @@ EARTH_CIRCUMFERENCE_KM = 40075
 KM_PER_DEGREE = EARTH_CIRCUMFERENCE_KM / 360.0
 EARTH_RADIUS_KM = EARTH_CIRCUMFERENCE_KM / 2 * np.pi
 
+
 def get_nrows_ncols_from_domain_size_and_reskm(
     domain: tuple[float, float, float, float],
     res_km: float,
 ) -> tuple[int, int]:
-
     min_lon, min_lat, max_lon, max_lat = domain
     lat_km = (max_lat - min_lat) * KM_PER_DEGREE
     avg_lat = (min_lat + max_lat) / 2.0
@@ -95,6 +96,7 @@ def distance_from_coordinates(
     d = 2 * r * np.arcsin(np.sqrt(a))
     return d
 
+
 def reproject(
     x_coords: np.ndarray | list | tuple,
     y_coords: np.ndarray | list | tuple,
@@ -104,6 +106,7 @@ def reproject(
     # Local copy to avoid circular import with interp2grid/destaggering
     transformer = Transformer.from_crs(src_crs, dst_crs, always_xy=True)
     return transformer.transform(x_coords, y_coords)
+
 
 def assign_latlon_coords(
     array: Any,

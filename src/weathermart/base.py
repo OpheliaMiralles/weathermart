@@ -21,6 +21,7 @@ from weathermart.variable_naming import get_variables
 variables_metadata = get_variables()
 dask.config.set({"array.chunk-size": "256MiB"})
 
+
 class BaseRetriever(ABC):
     """
     Protocol for Data Retrievers.
@@ -198,8 +199,10 @@ def checktype(
         vars_out = variables
     else:
         try:
-            vars_out = [v for v in variables if isinstance(v, str)]  
+            vars_out = [v for v in variables if isinstance(v, str)]
         except TypeError:
-            raise TypeError(f"variables must be str or list[str], got {type(variables)}")
+            raise TypeError(
+                f"variables must be str or list[str], got {type(variables)}"
+            )
 
     return dates_out, vars_out

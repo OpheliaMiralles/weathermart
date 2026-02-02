@@ -35,7 +35,9 @@ class GribRetriever(BaseRetriever):
 
         self.sources = ("KENDA-CH1", "ICON-CH1-EPS", "COSMO-1E", "COSMO_2E")
         self.variables = list(
-            variables_metadata[variables_metadata.source == "ECCODES_COSMO"].short_name.unique()
+            variables_metadata[
+                variables_metadata.source == "ECCODES_COSMO"
+            ].short_name.unique()
         )
         self.crs = "epsg:4326"
 

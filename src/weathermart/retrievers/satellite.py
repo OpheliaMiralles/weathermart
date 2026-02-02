@@ -90,7 +90,19 @@ EUMETSAT_SOURCES = {
         "products": {
             "avhrr_l1": {
                 "code": "EO:EUM:DAT:METOP:AVHRRL1",
-                "variables": ['1', '2', '3a', '3b', '4', '5', 'cloud_flags', 'satellite_azimuth_angle', 'satellite_zenith_angle', 'solar_azimuth_angle', 'solar_zenith_angle'],
+                "variables": [
+                    "1",
+                    "2",
+                    "3a",
+                    "3b",
+                    "4",
+                    "5",
+                    "cloud_flags",
+                    "satellite_azimuth_angle",
+                    "satellite_zenith_angle",
+                    "solar_azimuth_angle",
+                    "solar_zenith_angle",
+                ],
                 "format": ".nat",
                 "native_res": "1km",
                 "round_time": "360min",
@@ -109,9 +121,7 @@ EUMETSAT_SOURCES = {
                 "native_res": "12km",
                 "reader": "coda",
                 "format": ".nat",
-                "description": (
-                    "Hyperspectral IR radiances. All spectral channels."
-                ),
+                "description": ("Hyperspectral IR radiances. All spectral channels."),
             },
             "ascat_coastal_winds": {
                 "code": "EO:EUM:DAT:METOP:OSI-104",
@@ -188,7 +198,7 @@ EUMETSAT_SOURCES = {
             "all_sky_radiance_polar": {
                 "code": "EO:EUM:DAT:0370",
                 "variables": ["radiance"],
-                "round_time": "360min",  
+                "round_time": "360min",
                 "reader": "goes_imager_nc",
                 "format": ".nc",
                 "description": (
@@ -369,7 +379,9 @@ class EumetsatRetriever(BaseRetriever):
         }
         resolution = resolution or EUMETSAT_SOURCES[source].get("native_res", None)
         if resolution is None:
-            raise RuntimeError("No resolution specified and no consistent native_res known for this source.")
+            raise RuntimeError(
+                "No resolution specified and no consistent native_res known for this source."
+            )
         if isinstance(resolution, str) and resolution.endswith("km"):
             res_km = float(resolution.replace("km", ""))
         else:
@@ -447,8 +459,7 @@ class EumetsatRetriever(BaseRetriever):
                                 ds = scn.to_xarray().persist()
                             else:
                                 ds = scn.to_xarray_dataset()
-                                ds = ds.astype({
-                                    v: np.float32 for v in ds.data_vars})
+                                ds = ds.astype({v: np.float32 for v in ds.data_vars})
                             t = scn.start_time or extract_time_flex(Path(f).stem)
                         elif reader == "coda":
                             ds, t = iasi_metop_to_xarray(
@@ -495,7 +506,11 @@ class EumetsatRetriever(BaseRetriever):
                     "No reader or format specified for this product. Available readers are: "
                     + str(available_readers())
                 )
-            satpy_vars = list(set(product_cfg["variables"]).intersection(set([v[0] for v in variables])))
+            satpy_vars = list(
+                set(product_cfg["variables"]).intersection(
+                    set([v[0] for v in variables])
+                )
+            )
             if len(satpy_vars) == 0:
                 logger.info(
                     f"No requested variables found in product {prod_name}, skipping."
@@ -508,10 +523,18 @@ class EumetsatRetriever(BaseRetriever):
             ds_list = []
 
             for date in dates:
-                start_t = pd.to_timedelta(valid_times.start) if isinstance(valid_times, slice) else pd.to_timedelta("00:00:00")
-                end_t = pd.to_timedelta(valid_times.stop) if isinstance(valid_times, slice) else pd.to_timedelta("23:59:00")
-                start = (date+start_t).to_pydatetime()
-                end = (date+end_t).to_pydatetime()
+                start_t = (
+                    pd.to_timedelta(valid_times.start)
+                    if isinstance(valid_times, slice)
+                    else pd.to_timedelta("00:00:00")
+                )
+                end_t = (
+                    pd.to_timedelta(valid_times.stop)
+                    if isinstance(valid_times, slice)
+                    else pd.to_timedelta("23:59:00")
+                )
+                start = (date + start_t).to_pydatetime()
+                end = (date + end_t).to_pydatetime()
                 if test:
                     end = start + datetime.timedelta(minutes=30)
 
@@ -566,7 +589,7 @@ def regrid_swath_to_area(
     area,
     *,
     vars_to_grid: list[str] | None = None,
-    radius_of_influence: float = 30_000, 
+    radius_of_influence: float = 30_000,
 ) -> xr.Dataset:
     """
     Swath -> grid regridding using the provided pyresample AreaDefinition.
@@ -576,8 +599,9 @@ def regrid_swath_to_area(
     """
     from pyresample.geometry import SwathDefinition
     from pyresample.kd_tree import resample_gauss
-    radius_of_influence = 30_000 
-    sigmas = 15_000              
+
+    radius_of_influence = 30_000
+    sigmas = 15_000
     lons, lats = ds["lon"].values, ds["lat"].values
     swath = SwathDefinition(lons=lons, lats=lats)
     tgt_lons, tgt_lats = area.get_lonlats()
@@ -606,6 +630,7 @@ def regrid_swath_to_area(
     )
     return ds_out
 
+
 def iasi_metop_to_xarray(
     eps_file: str,
     area,
@@ -618,23 +643,22 @@ def iasi_metop_to_xarray(
     import coda
     from pyresample.geometry import SwathDefinition
     from pyresample.kd_tree import resample_nearest
+
     f = coda.open(eps_file)
     lats = []
     lons = []
     n_mdr = len(coda.fetch(f, "/MDR"))
     n_chan = 8700
-    wn_start = 645.0       
-    wn_step  = 0.25        
+    wn_start = 645.0
+    wn_step = 0.25
     wn = wn_start + np.arange(n_chan) * wn_step
-    t_eps = np.median(np.asarray(
-    coda.fetch(f, "/MDR[0]/MDR/OnboardUTC")
-))
+    t_eps = np.median(np.asarray(coda.fetch(f, "/MDR[0]/MDR/OnboardUTC")))
     epoch = datetime.datetime(2000, 1, 1, tzinfo=datetime.UTC)
-    times = epoch + datetime.timedelta(seconds=t_eps) 
+    times = epoch + datetime.timedelta(seconds=t_eps)
     IASI_BANDS = {
-    "temp_15um": (650, 770),      # ≈ 13–15.5 µm
-    "swir_36um": (2500, 2760),    # ≈ 3.6–4.0 µm
-}
+        "temp_15um": (650, 770),  # ≈ 13–15.5 µm
+        "swir_36um": (2500, 2760),  # ≈ 3.6–4.0 µm
+    }
     band_masks = {}
     for name, (wn_min, wn_max) in IASI_BANDS.items():
         mask = (wn >= wn_min) & (wn <= wn_max)
@@ -642,13 +666,13 @@ def iasi_metop_to_xarray(
         if not np.any(mask):
             raise ValueError(f"No channels in band {name}")
 
-        band_masks[name] =  mask
+        band_masks[name] = mask
     bands_out = {name: [] for name in band_masks}
     for i in range(n_mdr):
         base = f"/MDR[{i}]/MDR"
-        rad = np.asarray(coda.fetch(f, base + "/GS1cSpect"))   
+        rad = np.asarray(coda.fetch(f, base + "/GS1cSpect"))
         loc = np.asarray(coda.fetch(f, base + "/GGeoSondLoc"))
-        lon, lat = loc[..., 0], loc[..., 1]   
+        lon, lat = loc[..., 0], loc[..., 1]
         rad = rad.reshape(-1, rad.shape[-1])
         lat = lat.reshape(-1)
         lon = lon.reshape(-1)
@@ -677,10 +701,7 @@ def iasi_metop_to_xarray(
         out[name] = grid
     tgt_lons, tgt_lats = area.get_lonlats()
     ds = xr.Dataset(
-        {
-            name: (("y", "x"), data)
-            for name, data in out.items()
-        },
+        {name: (("y", "x"), data) for name, data in out.items()},
         coords={
             "lon": (("y", "x"), np.asarray(tgt_lons)),
             "lat": (("y", "x"), np.asarray(tgt_lats)),
@@ -697,6 +718,7 @@ def plot_polar(ds, t, var="wind_speed"):
     import cartopy.crs as ccrs
     import matplotlib.pyplot as plt
     from pyproj import Transformer
+
     lon_var = "lon" if "lon" in ds.coords else "longitude"
     lat_var = "lat" if "lat" in ds.coords else "latitude"
     lon = ds[lon_var].values.ravel()

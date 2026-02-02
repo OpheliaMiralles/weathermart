@@ -10,7 +10,9 @@ from weathermart.base import BaseRetriever
 from weathermart.base import checktype
 from weathermart.base import variables_metadata
 
-nwp_dic = list(variables_metadata[variables_metadata.source == "ECCODES_COSMO"].short_name.unique())
+nwp_dic = list(
+    variables_metadata[variables_metadata.source == "ECCODES_COSMO"].short_name.unique()
+)
 type_mapping = {
     "analysis": {"type": "det", "stream": "enda"},
     "forecast": {"type": "ememb", "stream": "enfo"},

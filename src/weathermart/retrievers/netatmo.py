@@ -1,16 +1,19 @@
-from concurrent.futures import ProcessPoolExecutor, as_completed
-import os
-from typing import Any
 import datetime
+import json
+import os
+from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import as_completed
+from pathlib import Path
+from typing import Any
+
 import numpy as np
 import pandas as pd
 import xarray as xr
-import numpy as np
-import json
-from pathlib import Path
 import yrlib
 import yrlib.netatmo
-from weathermart.base import BaseRetriever, checktype
+
+from weathermart.base import BaseRetriever
+from weathermart.base import checktype
 
 CHUNK_SIZE = 24  # 24 × 5 min = 2 hours per worker
 MAX_WORKERS = min(12, os.cpu_count() or 4)
@@ -87,13 +90,14 @@ def pack_isnan_flags(
 def unpack_isnan_flag(qc_flag: xr.DataArray, k: int) -> xr.DataArray:
     return ((qc_flag >> np.uint64(k)) & np.uint64(1)).astype("uint8")
 
+
 def decode_qc_flags(ds: xr.Dataset, flag_var: str = "has_nan") -> xr.Dataset:
     """
     Decode individual variable flags from a packed uint64 flag variable.
     """
     mapping_flags = {i: f"{v}_is_nan" for i, v in enumerate(ds.variables)}
     if flag_var not in ds:
-            raise KeyError(f"{flag_var} not in dataset")
+        raise KeyError(f"{flag_var} not in dataset")
     out = {}
     for bit, name in mapping_flags.items():
         out[name] = ((ds[flag_var] >> np.uint64(bit)) & np.uint64(1)).astype("uint8")
@@ -114,9 +118,9 @@ def read_json_all(filename, latrange=None, lonrange=None):
             return data
 
         if text[0] == "{":
-            text = "[%s" % text
+            text = f"[{text}"
         text = text.replace("}]{", "}{").replace("}][{", "},{").replace("}{", "},{")
-        text = '{"body": %s}' % text
+        text = f'{{"body": {text}}}'
 
         try:
             body = json.loads(text)["body"]
