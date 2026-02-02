@@ -52,9 +52,6 @@ class DataRetriever(BaseRetriever):
             and associated properties.
         dates : list of datetime.date or datetime.date
             A single date or list of dates for data retrieval.
-        rename : bool, optional
-            If True, the retrieved dataset's variables will be renamed according to
-            the retriever's variable mappings. Defaults to True.
         **kwargs : dict
             Additional keyword arguments to be passed to each subretriever's retrieve method.
 
