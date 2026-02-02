@@ -17,7 +17,7 @@ from weathermart.base import checktype
 
 CHUNK_SIZE = 24  # 24 × 5 min = 2 hours per worker
 MAX_WORKERS = min(12, os.cpu_count() or 4)
-OUT_ROOT = Path("/lustre/storeB/users/opmir9231/netatmo_daily")
+OUT_ROOT = Path("/lustre/storeB/users/" + os.environ["USER"] + "/netatmo_daily")
 VAR_META = {
     "ta": dict(use="Temperature", units="C", name="Temperature", deacc=False),
     "pr": dict(use="Pressure", units="hPa", name="Pressure", deacc=False),
