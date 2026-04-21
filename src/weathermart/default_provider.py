@@ -1,4 +1,6 @@
 import logging
+import os
+from collections.abc import Sequence
 from importlib.metadata import entry_points
 from pathlib import Path
 
@@ -6,12 +8,17 @@ from weathermart.base import BaseRetriever
 from weathermart.provide import CacheRetriever
 from weathermart.provide import DataProvider
 
-LOGGER = logging.getLogger(__name__)
+DEFAULT_CACHE = Path("") / os.environ["USER"]
 
 
-def available_retrievers() -> tuple[BaseRetriever, ...]:
+def available_retrievers() -> Sequence[BaseRetriever]:
     """
     Get all available retriever instances.
+
+    Returns
+    -------
+    list
+        List containing instances of available data retrievers.
     """
     retrievers: list[BaseRetriever] = []
 
@@ -19,19 +26,19 @@ def available_retrievers() -> tuple[BaseRetriever, ...]:
     for plugin in plugins:
         try:
             target = plugin.load()
-            instance = target() if callable(target) else target
+            if callable(target):
+                instance = target()
             if isinstance(instance, BaseRetriever):
                 retrievers.append(instance)
-        except Exception:
-            LOGGER.exception("Failed loading retriever plugin %s", plugin.name)
-            continue
+        except Exception as e:
+            logging.exception("Failed loading retriever plugin %s: %s", plugin.name, e)
 
     retrievers.sort(key=lambda r: (r.priority, r.__class__.__name__), reverse=True)
 
     return retrievers
 
 
-def default_provider(cache_location: Path | None) -> DataProvider:
+def default_provider(cache_location: Path | None = DEFAULT_CACHE) -> DataProvider:
     """
     Create the default DataProvider with caching.
 

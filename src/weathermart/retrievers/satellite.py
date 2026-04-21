@@ -116,7 +116,8 @@ EUMETSAT_SOURCES = {
             "iasi_radiances": {
                 "code": "EO:EUM:DAT:METOP:IASIL1C-ALL",
                 "variables": ["temp_15um", "swir_36um"],
-                "round_time": "1440min",
+                "valid_times": slice("09:00:00", "21:00:00"),
+                "round_time": "770min",
                 "native_res": "12km",
                 "reader": "coda",
                 "format": ".nat",
@@ -125,6 +126,7 @@ EUMETSAT_SOURCES = {
             "ascat_coastal_winds": {
                 "code": "EO:EUM:DAT:METOP:OSI-104",
                 "native_res": "12.5km",
+                "valid_times": slice("09:00:00", "21:00:00"),
                 "variables": [
                     "wvc_index",
                     "model_speed",
@@ -137,12 +139,53 @@ EUMETSAT_SOURCES = {
                     "bs_distance",
                 ],
                 "reader": "xarray_ascat_winds",
-                "round_time": "1440min",
+                "round_time": "770min",
                 "format": ".nc",
                 "description": (
                     "High-resolution coastal ASCAT winds (Metop-B). "
                     "Improves near-shore wind and precipitation forecasts."
                 ),
+            },
+            "atms_radiances": {
+                "code": "EO:EUM:DAT:0345",
+                "variables": [
+                    "1",
+                    "2",
+                    "3",
+                    "4",
+                    "5",
+                    "6",
+                    "7",
+                    "8",
+                    "9",
+                    "10",
+                    "11",
+                    "12",
+                    "13",
+                    "14",
+                    "15",
+                    "16",
+                    "17",
+                    "18",
+                    "19",
+                    "20",
+                    "21",
+                    "22",
+                ],
+                "valid_times": slice("09:00:00", "21:00:00"),
+                "native_res": "16km",
+                "reader": "atms_l1b_nc",
+                "format": ".nc",
+                "description": ("MW radiances. 22 spectral channels."),
+            },
+            "mhs_radiances": {
+                "code": "EO:EUM:DAT:METOP:MHSL1",
+                "variables": ["1", "2", "3", "4", "5"],
+                "valid_times": slice("09:00:00", "21:00:00"),
+                "native_res": "16km",
+                "reader": "mhs_l1c_aapp",
+                "format": ".nat",
+                "description": ("MW radiances. 5 spectral channels."),
             },
         },
     },
@@ -150,7 +193,7 @@ EUMETSAT_SOURCES = {
         "platform": "MTG-I (FCI and LI)",
         "type": "geostationary",
         "freq": "2–10 min",
-        "native_res": "10km",
+        "native_res": "3km",
         "products": {
             "li_flashes": {
                 "code": "EO:EUM:DAT:0686",
@@ -209,7 +252,6 @@ EUMETSAT_SOURCES = {
 
 
 def extract_all_variables(sources: dict) -> list[str]:
-    """Return a de-duplicated list of all variable names declared in the source configuration."""
     vars_all = []
 
     for platform, pdata in sources.items():
@@ -254,22 +296,12 @@ def get_cached_eumdac_token(eumdac, key, secret):
 
 
 class RateLimiter:
-    """Thread-safe rate limiter enforcing an average maximum call rate."""
-
     def __init__(self, rate_per_sec=20):
-        """Create a rate limiter.
-
-        Parameters
-        ----------
-        rate_per_sec : float, optional
-            Maximum average calls per second.
-        """
         self.rate = rate_per_sec
         self.last = time.monotonic()
         self.lock = threading.Lock()
 
     def wait(self):
-        """Block until the next call is allowed under the configured rate limit."""
         with self.lock:
             now = time.monotonic()
             delay = (1.0 / self.rate) - (now - self.last)
@@ -286,11 +318,6 @@ RE_YYYYMMDD_HHMMSS_FLEX = re.compile(
 
 
 def extract_time_flex(name: str) -> datetime.datetime | None:
-    """Extract a YYYYMMDDHHMMSS timestamp from a string.
-
-    Accepts timestamps formatted as YYYYMMDDHHMMSS, YYYYMMDD_HHMMSS, or YYYYMMDD-HHMMSS.
-    Returns None if no timestamp is found.
-    """
     m = RE_YYYYMMDD_HHMMSS_FLEX.search(name)
     if not m:
         return None
@@ -298,34 +325,25 @@ def extract_time_flex(name: str) -> datetime.datetime | None:
 
 
 def retry_download(fn):
-    """Decorator adding retries with exponential backoff for network downloads."""
-
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
-        delay = 1.0
-        last_exc: Exception | None = None
-
-        for _ in range(5):  # max retries
+        delay = 1
+        for attempt in range(5):  # max retries
             try:
                 rate_limiter.wait()
                 return fn(*args, **kwargs)
-            except (
-                urllib3.exceptions.ProtocolError,
-                urllib3.exceptions.HTTPError,
-                OSError,
-                TimeoutError,
-            ) as exc:
-                last_exc = exc
+            except urllib3.exceptions.ProtocolError:
                 time.sleep(delay)
                 delay *= 2
-
-        raise RuntimeError("Download failed after retries") from last_exc
+            except Exception:
+                time.sleep(delay)
+                delay *= 2
+        raise RuntimeError("Download failed after retries")
 
     return wrapper
 
 
 def round_to_nearest_minutes(dt: datetime.datetime, freq=15) -> datetime.datetime:
-    """Floor a datetime to the nearest lower multiple of ``freq`` minutes."""
     return pd.Timestamp(dt).floor(f"{freq}min").to_pydatetime()
 
 
@@ -336,12 +354,12 @@ class EumetsatRetriever(BaseRetriever):
 
     crs = "epsg:4326"
     sources = tuple(EUMETSAT_SOURCES.keys())
-    variables = {k: [k] for k in extract_all_variables(EUMETSAT_SOURCES)}
+    variables = extract_all_variables(EUMETSAT_SOURCES)
 
     def retrieve(
         self,
         source: str,
-        variables: list[tuple[str, dict]],
+        variables: list[str] | str,
         dates: datetime.date | str | pd.Timestamp | list[Any],
         *,
         bbox: tuple[float, float, float, float] = NORDIC_DOMAIN,
@@ -349,43 +367,40 @@ class EumetsatRetriever(BaseRetriever):
         resolution: str | float | None = None,
         eumdac_credentials_path: str | None = None,
         test: bool = False,
-        temp_dir: str | None = None,
     ) -> xr.Dataset:
-        """Retrieve EUMETSAT satellite products and return them as an xarray dataset.
+        """
+        Retrieve EUMETSAT data for specified dates and variables.
 
         Parameters
         ----------
         source : str
-            Source identifier (key in ``EUMETSAT_SOURCES``), e.g. ``"MSG_SEVIRI"`` or ``"METOP"``.
-        variables : list[tuple[str, dict]]
-            Requested variables as ``(name, options)`` tuples.
-        dates : datetime.date | str | pandas.Timestamp | list[Any]
-            Date or list of dates to retrieve.
-        bbox : tuple[float, float, float, float], optional
-            Bounding box ``(min_lon, min_lat, max_lon, max_lat)`` in degrees.
-        product : str, optional
-            Product name within the configured source. Use ``"auto"`` to retrieve all configured products.
-        resolution : str | float | None, optional
-            Target grid resolution in km (e.g. ``"3km"`` or ``3.0``). If None, uses the source native resolution.
-        eumdac_credentials_path : str | None, optional
-            Path to a JSON credentials file with ``consumer_key`` and ``consumer_secret``. If None, reads
-            ``EUMDAC_KEY`` and ``EUMDAC_SECRET`` from the environment.
+            Source identifier for the data retrieval process.
+        variables : list of tuple[str, dict]
+            List of tuples containing variable names and associated parameters.
+        dates : list of datetime.date or datetime.date
+            Date or list of dates for which to retrieve radar data.
+        bbox : tuple of float, optional
+            Bounding box for the data retrieval in the format (min_lon, min_lat, max_lon, max_lat).
+            Default is NORDIC_DOMAIN.
+        resolution : str or float, optional
+            Desired resolution in km for the resampled data. Can be a string with 'km' suffix (e.g., '1km')
+            or a float representing the resolution in kilometers. Default is 1km.
+        eumdac_credentials_path : str, optional
+            Path to the file containing the EUMETSAT API token. Default is None.
         test : bool, optional
-            If True, download only a short time slice per day (useful for CI/tests).
-        temp_dir : str | None, optional
-            Parent directory for temporary downloads. If None, uses the system temp directory.
+            If True, only the first 30 minutes of data per day will be downloaded for testing purposes.
 
         Returns
         -------
-        xarray.Dataset
-            Dataset on the requested grid with a ``time`` dimension.
-
+        xr.Dataset
+            Merged dataset containing the radar data for all specified dates and variables.
         Raises
         ------
-        ImportError
-            If required optional dependencies are missing.
         RuntimeError
-            If credentials are missing or no resolution can be determined.
+            If the EUMETSAT API credentials file is not set or if the token file cannot be read.
+        FileNotFoundError
+            If the token is not found.
+
         """
         try:
             import eumdac
@@ -451,7 +466,9 @@ class EumetsatRetriever(BaseRetriever):
         def process_products(products):
             datasets = []
 
-            with TemporaryDirectory(dir=temp_dir) as tmpdir:
+            with TemporaryDirectory(
+                dir="/lustre/storeB/users/" + os.environ["USER"] + "/tmp"
+            ) as tmpdir:
 
                 @retry_download
                 def _download(prod):
@@ -537,14 +554,30 @@ class EumetsatRetriever(BaseRetriever):
                     set([v[0] for v in variables])
                 )
             )
+            if len(satpy_vars) == 0:
+                logger.info(
+                    f"No requested variables found in product {prod_name}, skipping."
+                )
+                continue
             round_time = product_cfg.get("round_time", None)
             round_time = int(round_time.replace("min", "")) if round_time else None
+            valid_times = product_cfg.get("valid_times", None)
             collection = datastore.get_collection(collection_id)
             ds_list = []
 
             for date in dates:
-                start = datetime.datetime.combine(date, datetime.time.min)
-                end = start + datetime.timedelta(days=1) - datetime.timedelta(minutes=5)
+                start_t = (
+                    pd.to_timedelta(valid_times.start)
+                    if isinstance(valid_times, slice)
+                    else pd.to_timedelta("00:00:00")
+                )
+                end_t = (
+                    pd.to_timedelta(valid_times.stop)
+                    if isinstance(valid_times, slice)
+                    else pd.to_timedelta("23:59:00")
+                )
+                start = (date + start_t).to_pydatetime()
+                end = (date + end_t).to_pydatetime()
                 if test:
                     end = start + datetime.timedelta(minutes=30)
 
@@ -720,3 +753,4 @@ def iasi_metop_to_xarray(
         },
     )
     return ds, times.replace(tzinfo=None)
+

@@ -34,7 +34,7 @@ make -j4
 echo "Installing CODA..."
 make install
 echo "Installing CODA Python into venv..."
-echo "$CODA_INSTALL/lib/python3.12/site-packages" \
+echo "$CODA_PREFIX/lib/python3.12/site-packages" \
     > $VENV_DIR/lib/python3.12/site-packages/coda_path.pth
 
 cd ~/software
@@ -45,7 +45,7 @@ tar -xzf harp-1.29.tar.gz # CODA + HARP definitions are needed for IASI data
 echo "Patching venv activate script..."
 cat << 'EOF' >> "$ACTIVATE_SCRIPT"
 
-# --- CODA satellite IO environment ---
+# --- CODA IO environment ---
 export CODA_HOME="$HOME/coda_install_py312"
 export PATH="$CODA_HOME/bin:$PATH"
 export LD_LIBRARY_PATH="$CODA_HOME/lib:$LD_LIBRARY_PATH"
