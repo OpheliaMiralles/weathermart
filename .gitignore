@@ -26,7 +26,6 @@ logs
 *.csv
 
 #examples
-examples
 *.png
 *_bris.py
 plots
