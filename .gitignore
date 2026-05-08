@@ -24,7 +24,6 @@ submit*.sh
 logs
 
 #examples
-examples
 *.png
 *_bris.py
 plots
