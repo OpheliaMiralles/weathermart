@@ -604,7 +604,7 @@ class NordicRadarRetriever(BaseRetriever):
         """
         dates, variables = checktype(dates, variables)
         unique_days = sorted(set(pd.to_datetime(d).date() for d in dates))
-        var_list = [v[0] for v in variables]
+        var_list = list(variables)
 
         datasets: list[xr.Dataset] = []
         for day in unique_days:

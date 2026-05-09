@@ -86,7 +86,7 @@ EUMETSAT_SOURCES = {
     "METOP": {
         "platform": "Metop-A/B/C (IASI and ASCAT)",
         "type": "polar",
-        "freq": "2–4 passes/day",
+        "freq": "2-4 passes/day",
         "products": {
             "avhrr_l1": {
                 "code": "EO:EUM:DAT:METOP:AVHRRL1",
@@ -347,6 +347,82 @@ def round_to_nearest_minutes(dt: datetime.datetime, freq=15) -> datetime.datetim
     return pd.Timestamp(dt).floor(f"{freq}min").to_pydatetime()
 
 
+def _encode_satellite_attr_value(value: Any) -> Any:
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    if isinstance(value, np.generic):
+        return value.item()
+    if hasattr(value, "to_wkt"):
+        return value.to_wkt()
+    try:
+        json.dumps(value)
+    except TypeError:
+        return str(value)
+    return value
+
+
+def _sanitize_dataset_for_zarr(ds: xr.Dataset) -> xr.Dataset:
+    ds = ds.copy(deep=False)
+
+    for coord_name in list(ds.coords):
+        coord = ds.coords[coord_name]
+        if coord.ndim == 0 and coord.dtype == object:
+            coord_value = coord.values.item()
+            if coord_name == "crs" and hasattr(coord_value, "to_wkt"):
+                ds.attrs["crs_wkt"] = coord_value.to_wkt()
+            else:
+                ds.attrs[coord_name] = str(coord_value)
+            ds = ds.drop_vars(coord_name)
+            for var_name in ds.data_vars:
+                if ds[var_name].attrs.get("grid_mapping") == coord_name:
+                    ds[var_name].attrs.pop("grid_mapping")
+
+    coordinates = ds.attrs.get("coordinates")
+    if isinstance(coordinates, (list, tuple)):
+        coordinates = [str(coord) for coord in coordinates if str(coord) in ds.coords]
+        if coordinates:
+            ds.attrs["coordinates"] = " ".join(coordinates)
+        else:
+            ds.attrs.pop("coordinates", None)
+
+    for attr_name, attr_value in list(ds.attrs.items()):
+        ds.attrs[attr_name] = _encode_satellite_attr_value(attr_value)
+
+    for var_name in ds.data_vars:
+        attrs = ds[var_name].attrs
+        attrs.pop("metadata", None)
+        coordinates = attrs.get("coordinates")
+        if isinstance(coordinates, (list, tuple)):
+            coordinates = [
+                str(coord) for coord in coordinates if str(coord) in ds[var_name].coords
+            ]
+            if coordinates:
+                attrs["coordinates"] = " ".join(coordinates)
+            else:
+                attrs.pop("coordinates", None)
+        for attr_name, attr_value in list(attrs.items()):
+            attrs[attr_name] = _encode_satellite_attr_value(attr_value)
+
+    return ds
+
+
+def _materialize_dataset_single_threaded(ds: xr.Dataset) -> xr.Dataset:
+    if any(getattr(ds[var_name].data, "chunks", None) is not None for var_name in ds.data_vars):
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message="invalid value encountered in arcsin",
+                category=RuntimeWarning,
+            )
+            warnings.filterwarnings(
+                "ignore",
+                message="invalid value encountered in arccos",
+                category=RuntimeWarning,
+            )
+            return ds.compute(scheduler="single-threaded")
+    return ds
+
+
 class EumetsatRetriever(BaseRetriever):
     """
     Generic EUMETSAT retriever for geostationary + polar satellites.
@@ -355,6 +431,7 @@ class EumetsatRetriever(BaseRetriever):
     crs = "epsg:4326"
     sources = tuple(EUMETSAT_SOURCES.keys())
     variables = extract_all_variables(EUMETSAT_SOURCES)
+    batch_dates = True
 
     def retrieve(
         self,
@@ -452,6 +529,7 @@ class EumetsatRetriever(BaseRetriever):
                 ) from exc
 
         datastore = eumdac.DataStore(token)
+        available_reader_names = set(available_readers())
         width, height = get_nrows_ncols_from_domain_size_and_reskm(bbox, res_km)
         area = AreaDefinition(
             "bbox",
@@ -465,6 +543,9 @@ class EumetsatRetriever(BaseRetriever):
 
         def process_products(products):
             datasets = []
+            format_suffixes = (
+                tuple(format) if isinstance(format, (list, tuple)) else (format,)
+            )
 
             with TemporaryDirectory(
                 dir="/lustre/storeB/users/" + os.environ["USER"] + "/tmp"
@@ -472,7 +553,11 @@ class EumetsatRetriever(BaseRetriever):
 
                 @retry_download
                 def _download(prod):
-                    fname = next(e for e in prod.entries if e.endswith(format))
+                    entries = [e for e in prod.entries if e.endswith(format_suffixes)]
+                    if reader == "li_l2_nc":
+                        body_entries = [e for e in entries if "BODY" in e]
+                        entries = body_entries or entries
+                    fname = entries[0]
                     with (
                         prod.open(entry=fname) as src,
                         open(f"{tmpdir}/{os.path.basename(fname)}", "wb") as dst,
@@ -482,11 +567,47 @@ class EumetsatRetriever(BaseRetriever):
                 with ThreadPoolExecutor(max_workers=max_workers) as ex:
                     list(ex.map(_download, products))
 
-                files = glob.glob(f"{tmpdir}/*{format}")
+                files = []
+                for suffix in format_suffixes:
+                    files.extend(glob.glob(f"{tmpdir}/*{suffix}"))
 
                 for f in files:
                     try:
-                        if reader in available_readers():
+                        if reader == "li_l2_nc":
+                            ds = xr.open_dataset(f)
+                            if "x" in ds.data_vars and "y" in ds.data_vars:
+                                ds = ds.set_coords(["x", "y"])
+                            pixel_id = np.char.add(
+                                np.char.mod("%.3f", ds["x"].values.astype(np.float64)),
+                                np.char.add(
+                                    "_",
+                                    np.char.mod(
+                                        "%.3f", ds["y"].values.astype(np.float64)
+                                    ),
+                                ),
+                            )
+                            ds = ds.assign_coords(pixel_id=("pixels", pixel_id))
+                            ds = ds.swap_dims({"pixels": "pixel_id"})
+                            rename_map = {
+                                "flash_accumulation": "flash_count",
+                                "accumulated_flash_area": "flash_area",
+                            }
+                            selected = {
+                                source_name: target_name
+                                for source_name, target_name in rename_map.items()
+                                if target_name in satpy_vars and source_name in ds.data_vars
+                            }
+                            if not selected:
+                                raise KeyError(
+                                    f"No MTG lightning variables found in {f} for {satpy_vars}"
+                                )
+                            ds = ds[list(selected)].rename(selected)
+                            ds = ds.groupby("pixel_id").mean()
+                            t = pd.to_datetime(
+                                ds.attrs.get("time_coverage_start")
+                                or extract_time_flex(Path(f).stem)
+                            ).to_pydatetime()
+                        elif reader in available_reader_names:
                             scn = Scene(reader=reader, filenames=[f])
                             logger.debug(
                                 f"Available variables are: {scn.available_dataset_names()}"
@@ -494,15 +615,26 @@ class EumetsatRetriever(BaseRetriever):
                             logger.debug(
                                 f"Loading variables {satpy_vars} from file {f}"
                             )
-                            scn.load(satpy_vars)
                             with warnings.catch_warnings():
-                                warnings.simplefilter("ignore")
+                                warnings.filterwarnings(
+                                    "ignore",
+                                    message="invalid value encountered in arcsin",
+                                    category=RuntimeWarning,
+                                    module=r"geotiepoints\.geointerpolator",
+                                )
+                                warnings.filterwarnings(
+                                    "ignore",
+                                    message="invalid value encountered in arccos",
+                                    category=RuntimeWarning,
+                                    module=r"geotiepoints\.geointerpolator",
+                                )
+                                scn.load(satpy_vars)
                                 scn = scn.resample(area, resampler="nearest")
-                            if reader.startswith("seviri"):
-                                ds = scn.to_xarray().persist()
-                            else:
-                                ds = scn.to_xarray_dataset()
-                                ds = ds.astype({v: np.float32 for v in ds.data_vars})
+                                if reader.startswith("seviri"):
+                                    ds = scn.to_xarray().persist()
+                                else:
+                                    ds = scn.to_xarray_dataset()
+                                    ds = ds.astype({v: np.float32 for v in ds.data_vars})
                             t = scn.start_time or extract_time_flex(Path(f).stem)
                         elif reader == "coda":
                             ds, t = iasi_metop_to_xarray(
@@ -526,7 +658,10 @@ class EumetsatRetriever(BaseRetriever):
                             t = extract_time_flex(Path(f).stem)
                         if round_time:
                             t = round_to_nearest_minutes(t, freq=round_time)
+                        ds = _sanitize_dataset_for_zarr(ds)
                         ds = ds.expand_dims(time=[t])
+                        if reader == "avhrr_l1b_eps":
+                            ds = _materialize_dataset_single_threaded(ds)
                         datasets.append(ds)
 
                     except Exception:
@@ -551,7 +686,7 @@ class EumetsatRetriever(BaseRetriever):
                 )
             satpy_vars = list(
                 set(product_cfg["variables"]).intersection(
-                    set([v[0] for v in variables])
+                    set(variables)
                 )
             )
             if len(satpy_vars) == 0:
@@ -563,7 +698,7 @@ class EumetsatRetriever(BaseRetriever):
             round_time = int(round_time.replace("min", "")) if round_time else None
             valid_times = product_cfg.get("valid_times", None)
             collection = datastore.get_collection(collection_id)
-            ds_list = []
+            products_to_process = []
 
             for date in dates:
                 start_t = (
@@ -611,8 +746,10 @@ class EumetsatRetriever(BaseRetriever):
                     date,
                     len(products),
                 )
-                ds_list = process_products(products)
+                products_to_process.extend(products)
 
+            if products_to_process:
+                ds_list = process_products(products_to_process)
                 if ds_list:
                     all_ds.append(xr.concat(ds_list, dim="time"))
 
@@ -624,6 +761,7 @@ class EumetsatRetriever(BaseRetriever):
             plot_polar(ds, t=t, var=satpy_vars[0])
         ds = ds.assign_attrs(metadata).groupby("time").mean(skipna=True)
         ds["time"] = pd.to_datetime(ds["time"].values).tz_localize(None)
+        ds = _sanitize_dataset_for_zarr(ds)
         return ds
 
 
@@ -763,8 +901,15 @@ def plot_polar(ds, t, var):
     import matplotlib.ticker as mticker
     from pyproj import Transformer
 
-    lon = ds["longitude"].values.ravel()
-    lat = ds["latitude"].values.ravel()
+    if "longitude" in ds and "latitude" in ds:
+        lon = ds["longitude"].values.ravel()
+        lat = ds["latitude"].values.ravel()
+    elif "x" in ds.coords and "y" in ds.coords:
+        lon2d, lat2d = np.meshgrid(ds["x"].values, ds["y"].values)
+        lon = lon2d.ravel()
+        lat = lat2d.ravel()
+    else:
+        raise KeyError("Dataset must contain either longitude/latitude or x/y coordinates.")
     val = ds.sel(time=t)[var].values.ravel()
     # Project lon/lat -> polar stereographic meters
     central_lon = 15

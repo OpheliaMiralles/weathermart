@@ -2,6 +2,7 @@ from weathermart.retrievers.dem import CEDTMRetriever as CEDTMRetriever
 from weathermart.retrievers.dem import DHM25Retriever as DHM25Retriever
 from weathermart.retrievers.dem import NASADEMRetriever as NASADEMRetriever
 from weathermart.retrievers.fdb import FDBRetriever as FDBRetriever
+from weathermart.retrievers.frost import FrostRetriever as FrostRetriever
 from weathermart.retrievers.grib import GribRetriever as GribRetriever
 from weathermart.retrievers.netatmo import NetAtmoRetriever as NetAtmoRetriever
 from weathermart.retrievers.radar import NordicRadarRetriever as NordicRadarRetriever

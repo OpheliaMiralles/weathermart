@@ -9,8 +9,6 @@ from typing import Any
 import numpy as np
 import pandas as pd
 import xarray as xr
-import yrlib
-import yrlib.netatmo
 
 from weathermart.base import BaseRetriever
 from weathermart.base import checktype
@@ -105,6 +103,8 @@ def decode_qc_flags(ds: xr.Dataset, flag_var: str = "has_nan") -> xr.Dataset:
 
 
 def read_json_all(filename, latrange=None, lonrange=None):
+    import yrlib
+
     data = {}
 
     if filename is None or not os.path.exists(filename):
@@ -173,6 +173,9 @@ def get_multi(
     latrange=None,
     lonrange=None,
 ):
+    import yrlib
+    import yrlib.netatmo
+
     required_unixtimes = set()
     for t in unixtimes:
         required_unixtimes |= {t, t - 600, t + 600}
@@ -257,7 +260,8 @@ def get_multi(
     return results
 
 
-def netatmo_to_xarray(datetimes):
+def netatmo_to_xarray(datetimes, variables=None):
+    variables = TITAN_VARIABLES if variables is None else list(variables)
     unixtime = [
         (pd.to_datetime(d) - pd.to_datetime("1970-01-01T00:00:00Z")).total_seconds()
         for d in pd.to_datetime(datetimes)
@@ -292,9 +296,9 @@ def netatmo_to_xarray(datetimes):
     print("Fetching data for ", unixtime, flush=True)
     results = get_multi(
         unixtimes=unixtime,
-        variables=TITAN_VARIABLES,
+        variables=variables,
     )
-    for v in TITAN_VARIABLES:
+    for v in variables:
         p = results[v]
         if len(p.locations) == 0:
             continue
@@ -308,7 +312,8 @@ def netatmo_to_xarray(datetimes):
     return ds
 
 
-def netatmo_to_xarray_parallel(datetimes):
+def netatmo_to_xarray_parallel(datetimes, variables=None):
+    variables = TITAN_VARIABLES if variables is None else list(variables)
     datetimes = pd.to_datetime(datetimes)
     datetimes = datetimes.sort_values()
     blocks = [
@@ -319,7 +324,9 @@ def netatmo_to_xarray_parallel(datetimes):
     datasets = []
 
     with ProcessPoolExecutor(max_workers=MAX_WORKERS) as ex:
-        futures = {ex.submit(_worker_netatmo_block, block): block for block in blocks}
+        futures = {
+            ex.submit(_worker_netatmo_block, block, variables): block for block in blocks
+        }
 
         for fut in as_completed(futures):
             ds = fut.result()
@@ -341,7 +348,7 @@ def netatmo_to_xarray_parallel(datetimes):
     return ds
 
 
-def _worker_netatmo_block(datetimes_block):
+def _worker_netatmo_block(datetimes_block, variables):
     try:
         print(
             "Processing block:",
@@ -350,7 +357,7 @@ def _worker_netatmo_block(datetimes_block):
             datetimes_block[-1],
             flush=True,
         )
-        return netatmo_to_xarray(datetimes_block)
+        return netatmo_to_xarray(datetimes_block, variables)
     except Exception as e:
         print(f"[WARN] block failed: {e}", flush=True)
         return None
@@ -376,8 +383,10 @@ class NetAtmoRetriever(BaseRetriever):
         pack_nan_flags: bool = True,
         round_decimals: int = 4,
     ) -> xr.Dataset:
+        import yrlib
+        import yrlib.netatmo
         dates, variables = checktype(dates, variables)
-        varnames_req = [vname for vname, _ in variables]
+        varnames_req = list(variables)
         unique_days = sorted(set(pd.to_datetime(d).date() for d in dates))
 
         day_datasets: list[xr.Dataset] = []
@@ -390,7 +399,7 @@ class NetAtmoRetriever(BaseRetriever):
                 tz="UTC",
             )
 
-            ds = netatmo_to_xarray_parallel(times)
+            ds = netatmo_to_xarray_parallel(times, varnames_req)
             if ds is None or len(ds.data_vars) == 0:
                 print(f"{d:%Y-%m-%d} → no data", flush=True)
                 continue

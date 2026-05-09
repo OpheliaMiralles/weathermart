@@ -45,7 +45,7 @@ class TitanRetriever(BaseRetriever):
         dates: datetime.date | str | pd.Timestamp | list[Any],
     ) -> xr.Dataset:
         dates, variables = checktype(dates, variables)
-        varnames = [v[0] for v in variables]
+        varnames = list(variables)
 
         files = []
         for d in dates:
