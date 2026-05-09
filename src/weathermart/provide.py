@@ -629,16 +629,6 @@ def _format_kwarg(k: str, v: Any) -> str | None:
         if len(v) != 4:
             raise ValueError(f"Invalid bbox length for {k}: {v}")
         return f"{v[0]}_{v[1]}_{v[2]}_{v[3]}"
-    if k == "use_limitation":
-        if len(v) == 0:
-            raise ValueError(f"Empty values for {k}: {v}")
-        if len(v) == 1 and int(v[0]) == 20:
-            return None
-        if len(v) == 1:
-            return f"limitation{v[0]}"
-        if not _is_sorted(v):
-            raise ValueError(f"Values for {k} are not sorted: {v}")
-        return f"limitation{v[0]}to{v[-1]}"
     if k in ["levels", "step_hours", "ensemble_members"]:
         # shorten ensemble_members to ens
         if k == "ensemble_members":
