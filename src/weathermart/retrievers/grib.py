@@ -205,7 +205,7 @@ class GribRetriever(BaseRetriever):
         if self.path is None:
             raise ValueError("Path to local GRIB files must be provided.")
         dates, variables = checktype(dates, variables)
-        self.requested_variables = [v[0] for v in variables]
+        self.requested_variables = list(variables)
         step_hours = [step_hours] if isinstance(step_hours, int) else step_hours
         step_hours_sec = [
             pd.to_timedelta(s, unit="h").to_timedelta64() for s in step_hours

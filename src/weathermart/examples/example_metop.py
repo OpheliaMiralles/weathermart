@@ -10,7 +10,7 @@ from weathermart.default_provider import default_provider  # noqa: E402
 from weathermart.retrievers.satellite import plot_polar  # noqa: E402
 
 p = default_provider()
-vars_iasi = ["temp_15um", "swir_36um"] # TODO: add all interesting channels in supported variables
+vars_iasi = ["temp_15um", "swir_36um"]  # TODO: add all interesting channels in supported variables
 vars_ascat = ["wvc_index",
             "model_speed",
             "model_dir",
@@ -25,10 +25,10 @@ vars_avhrr = ['1', '2', '3a', '4', '5', 'satellite_zenith_angle', 'solar_zenith_
 
 
 def retrieve():
-    for date in pd.date_range('2021-01-09', '2021-01-10', freq='D'):
+    for date in pd.date_range('2021-01-10', '2021-01-10', freq='D'):
         try:
             print(f"Retrieving date {date.date()}")
-            start = datetime.datetime.utcnow()
+            start = datetime.datetime.now(datetime.UTC)
             data = p.provide(
             source='METOP',
             variables=vars_avhrr,
@@ -36,12 +36,12 @@ def retrieve():
             bbox=bbox,
             test=True,
             dates=[pd.to_datetime(date)],
-            storage_key="",
+            storage_key="avhrr_test",
             eumdac_credentials_path=".eumdac_credentials.json",
-            resolution='3km')
+            resolution='10km')
             print(data)
-            plot_polar(data, t=data.time.values[0], var=vars_iasi[0])
-            end = datetime.datetime.utcnow()
+            plot_polar(data, t=data.time.values[0], var=vars_avhrr[0])
+            end = datetime.datetime.now(datetime.UTC)
             print(f"Retrieval took {end - start}")
         except Exception as e:
             traceback.print_exc()

@@ -68,6 +68,8 @@ class BaseRetriever(ABC):
     """Priority of the retriever. Higher priority retrievers are preferred when multiple
     retrievers support the same source.
     """
+    batch_dates: bool = False
+    """Whether the provider can batch multiple missing days into one retrieve() call."""
 
     @abstractmethod
     def retrieve(

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-WEATHERMART_ROOT="$(pwd -P)"
+WEATHERMART_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 VENV_DIR="$WEATHERMART_ROOT/.venv"
 ACTIVATE_SCRIPT="$VENV_DIR/bin/activate"
 # install uv
@@ -52,7 +52,6 @@ export LD_LIBRARY_PATH="$CODA_HOME/lib:$LD_LIBRARY_PATH"
 export CODA_DEFINITION="$CODA_HOME/share/coda/definitions"
 export CODA_DEFINITION=$HOME/software/harp/harp-1.29/definitions:$CODA_DEFINITION
 EOF
-cd $WEATHERMART_ROOT
-deactivate
-source "$ACTIVATE_SCRIPT"
-echo "Done!"
+cd "$WEATHERMART_ROOT"
+echo "Done! Activate the environment in your shell with:"
+echo "source $ACTIVATE_SCRIPT"
