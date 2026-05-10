@@ -50,11 +50,11 @@ class MockRetriever(BaseRetriever):
                 "T2M": temperature,
             }
             for variable in variables:
-                if variable[0] not in self.variables.keys():
+                if variable not in self.variables.keys():
                     raise ValueError(f"Unknown variable {variable}.")
                 ds_var = xr.Dataset(
                     data_vars={
-                        variable[0]: (["time", "station"], var_map[variable[0]]),
+                        variable: (["time", "station"], var_map[variable]),
                     },
                     coords=dict(
                         time=time,
@@ -99,6 +99,19 @@ class MockRetrieverWithOtherKwargs(MockRetriever):
         ds = super().retrieve(source, variables, dates)
         ds.attrs["other_kwarg"] = other_kwarg
         return ds
+
+
+class MockBatchRetriever(MockRetriever):
+    sources: list[str] = ("BATCH",)
+    batch_dates = True
+
+    def __init__(self):
+        self.calls = []
+
+    def retrieve(self, source, variables, dates):
+        dates, variables = checktype(dates, variables)
+        self.calls.append((source, list(variables), list(dates)))
+        return super().retrieve(source, variables, dates)
 
 
 def test_mockretriever():
@@ -172,3 +185,21 @@ def test_dataretriever_kwargs():
         retriever.validate_kwargs(
             ["special_kwarg", "fake_kwarg"]
         )  # one kwarg is not valid
+
+
+def test_provider_batches_dates_for_batch_capable_retriever():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        retriever = MockBatchRetriever()
+        provider = DataProvider(CacheRetriever(tmpdir), [retriever])
+
+        provider.provide("BATCH", ["TOT_PREC"], ["2024-01-01", "2024-01-02"])
+        assert len(retriever.calls) == 1
+        assert retriever.calls[0][0] == "BATCH"
+        assert retriever.calls[0][1] == ["TOT_PREC"]
+        assert retriever.calls[0][2] == [
+            pd.Timestamp("2024-01-01"),
+            pd.Timestamp("2024-01-02"),
+        ]
+
+        provider.provide("BATCH", ["TOT_PREC"], ["2024-01-01", "2024-01-02"])
+        assert len(retriever.calls) == 1

@@ -13,15 +13,6 @@ from weathermart.base import BaseRetriever
 from weathermart.base import checktype
 from weathermart.base import variables_metadata
 
-try:
-    from meteodatalab import data_source as _MDL_DATA_SOURCE
-    from meteodatalab import grib_decoder as _MDL_GRIB_DECODER
-    from meteodatalab.ogd_api import _geo_coords as _MDL_GEO_COORDS
-except ImportError:
-    _MDL_DATA_SOURCE = None
-    _MDL_GRIB_DECODER = None
-    _MDL_GEO_COORDS = None
-
 
 class GribRetriever(BaseRetriever):
     """
@@ -29,12 +20,6 @@ class GribRetriever(BaseRetriever):
     """
 
     def __init__(self) -> None:
-        nwp_dic = {
-            k: [k]
-            for k in variables_metadata[
-                variables_metadata.source == "ECCODES_COSMO"
-            ].short_name.unique()
-        }
         self.type_mapping = {"forecast": "FCST", "analysis": "ANA", "first_guess": "FG"}
         self.prefix_mapping = {"ICON-CH1-EPS": "i1", "COSMO-1E": "c1", "COSMO-2E": "c2"}
         self.ensemble_mapping: dict[str | int | None, str | None] = {
@@ -49,7 +34,11 @@ class GribRetriever(BaseRetriever):
             self.ensemble_mapping[i] = f"{i:03}"
 
         self.sources = ("KENDA-CH1", "ICON-CH1-EPS", "COSMO-1E", "COSMO_2E")
-        self.variables = nwp_dic
+        self.variables = list(
+            variables_metadata[
+                variables_metadata.source == "ECCODES_COSMO"
+            ].short_name.unique()
+        )
         self.crs = "epsg:4326"
 
     @staticmethod
@@ -158,7 +147,7 @@ class GribRetriever(BaseRetriever):
     def retrieve(
         self,
         source: str,
-        variables: list[tuple[str, dict[str, Any]]],
+        variables: list[str] | str,
         dates: datetime.date | str | pd.Timestamp | list[Any],
         path_to_grib: Path | str | None = None,
         datatype: list[str] = ["analysis"],
@@ -198,24 +187,14 @@ class GribRetriever(BaseRetriever):
         xarray.Dataset
             Merged dataset containing the processed local SEN data.
         """
-
-        if (
-            _MDL_DATA_SOURCE is None
-            or _MDL_GRIB_DECODER is None
-            or _MDL_GEO_COORDS is None
-        ):
-            raise ImportError(
-                "GribRetriever requires 'meteodata-lab' and its GRIB dependencies. "
-                "Install it to use this retriever."
-            )
-        data_source = _MDL_DATA_SOURCE
-        grib_decoder = _MDL_GRIB_DECODER
-        _geo_coords = _MDL_GEO_COORDS
-
         # check if eccodes is installed.
         # there are two things that can go wrong here:
         # 1. eccodes is not installed
         # 2. eccodes is installed but the library is not found
+        from meteodatalab import data_source
+        from meteodatalab import grib_decoder
+        from meteodatalab.ogd_api import _geo_coords
+
         if path_to_grib is None:
             self.path = None
         elif isinstance(path_to_grib, str):
@@ -226,7 +205,7 @@ class GribRetriever(BaseRetriever):
         if self.path is None:
             raise ValueError("Path to local GRIB files must be provided.")
         dates, variables = checktype(dates, variables)
-        self.requested_variables = [v[0] for v in variables]
+        self.requested_variables = list(variables)
         step_hours = [step_hours] if isinstance(step_hours, int) else step_hours
         step_hours_sec = [
             pd.to_timedelta(s, unit="h").to_timedelta64() for s in step_hours

@@ -28,8 +28,7 @@ def chunk_data(data: xr.DataArray | xr.Dataset) -> Any:
         data["station"].attrs.update({"dtype": "str"})
         chunks = {dim: 1000 for dim in data.dims}
         return data.chunk(chunks)
-    else:
-        return data.chunk()
+    return data
 
 
 class CacheRetriever:
@@ -67,7 +66,7 @@ class CacheRetriever:
     def provide(
         self,
         source: str,
-        variables: list[tuple[str, dict]],
+        variables: list[str] | str,
         dates: datetime.date | str | pd.Timestamp | list[Any],
         is_static: bool = False,
         kwargs_str: str = "",
@@ -79,7 +78,7 @@ class CacheRetriever:
         ----------
         source : str
             Identifier of the data source.
-        variables : list of tuple (str, dict)
+        variables : list of str
             List of variable definitions (variable name and parameters).
         dates : list of datetime.date or datetime.date
             The date or dates for which to load cached data.
@@ -97,21 +96,19 @@ class CacheRetriever:
         """
         dates, variables = checktype(dates, variables)
         data = []
-        missing_vars: dict[pd.Timestamp, list[tuple[str, dict[Any, Any]]]] = {
-            date: [] for date in dates
-        }
+        missing_vars: dict[pd.Timestamp, list[str]] = {date: [] for date in dates}
         for date in dates:
             date_str = date.strftime("%Y%m%d")
             to_merge = []
             for variable in variables:
                 if not is_static:
-                    p = self.path / f"{source}{kwargs_str}/{date_str}/{variable[0]}"
+                    p = self.path / f"{source}{kwargs_str}/{date_str}/{variable}"
                 else:
                     # date irrelevant for static variables
-                    p = self.path / f"{source}{kwargs_str}/{variable[0]}"
+                    p = self.path / f"{source}{kwargs_str}/{variable}"
                 if p.exists() and any(p.iterdir()):
                     to_merge.append(
-                        xr.open_zarr(p.parent, consolidated=False)[variable[0]]
+                        xr.open_zarr(p.parent, consolidated=False)[variable]
                     )
                 else:
                     missing_vars[date].append(variable)
@@ -148,7 +145,7 @@ class CacheRetriever:
         self,
         data: xr.Dataset,
         source: str,
-        variables: list[tuple[str, dict]],
+        variables: list[str] | str,
         dates: list[datetime.date] | datetime.date,
         is_static: bool = False,
         kwargs_str: str = "",
@@ -162,7 +159,7 @@ class CacheRetriever:
             The dataset to be saved.
         source : str
             Identifier of the data source.
-        variables : list of tuple (str, dict)
+        variables : list of str
             List of variable definitions.
         dates : list of datetime.date or datetime.date
             Date or dates associated with the data.
@@ -255,6 +252,7 @@ class DataProvider:
     """
 
     _ignored_kwargs = [
+        "credentials_path",
         "eumdac_credentials_path",
         "jretrieve_credentials_path",
         "meteofranceapi_token_path",
@@ -281,37 +279,19 @@ class DataProvider:
         self.retriever = DataRetriever(retrievers)
         self.cache = cache
 
-    def get_variable_mapping(self, source: str) -> dict[Any, Any]:
-        """
-        Get variable mapping for the specified source.
-        """
-        retrievers = self.retriever.subretrievers
-        mapping_vars = {}
-        for r in retrievers:
-            if source.upper() in r.sources:
-                mapping_vars = r.variables
-        return mapping_vars
-
     def get_crs(self, source: str) -> str | dict[str, str] | None:
         """
         Get the coordinate reference system (CRS) for the given source.
         """
-        retrievers = self.retriever.subretrievers
-        for r in retrievers:
-            if source.upper() in r.sources:
-                return r.crs
-        return None
+        retriever = self.retriever.get_retriever(source)
+        return retriever.crs if retriever is not None else None
 
     def get_static_flag(self, source: str) -> bool:
         """
         Determine if the source has static variables.
         """
-        retrievers = self.retriever.subretrievers
-        for r in retrievers:
-            if source.upper() in r.sources:
-                if getattr(r, "is_static", False):
-                    return True
-        return False
+        retriever = self.retriever.get_retriever(source)
+        return bool(getattr(retriever, "is_static", False)) if retriever else False
 
     def get_kwargs_str(self, kwargs: dict[str, Any]) -> str:
         """
@@ -389,7 +369,7 @@ class DataProvider:
     def provide(
         self,
         source: str,
-        variables: list[tuple[str, dict]],
+        variables: list[str] | str,
         dates: datetime.date | str | pd.Timestamp | list[Any],
         **kwargs: Any,
     ) -> xr.Dataset:
@@ -418,7 +398,63 @@ class DataProvider:
         """
         dates, variables = checktype(dates, variables)
         is_static = self.get_static_flag(source)
+        retriever = self.retriever.get_retriever(source)
+        can_batch_dates = bool(getattr(retriever, "batch_dates", False))
+        kwargs_str = self.get_kwargs_str(kwargs)
+        kwargs_copy = copy.deepcopy(kwargs)
+        for k in self._override_kwargs:
+            kwargs_copy.pop(k, None)
         all_cached_data = []
+        missing_batch_dates: list[pd.Timestamp] = []
+        missing_batch_cache_days: list[pd.Timestamp] = []
+        missing_batch_vars: list[str] = []
+
+        def retrieve_missing(
+            missing_vars: list[str],
+            dates_to_retrieve: list[pd.Timestamp],
+            cache_days: list[pd.Timestamp],
+        ) -> None:
+            logging.warning(
+                "Retrieving %s from source %s",
+                ",".join(missing_vars),
+                source,
+            )
+            new_data = self.retriever.retrieve(
+                source, missing_vars, dates_to_retrieve, **kwargs_copy
+            )
+            if len(new_data) == 0:
+                return
+            new_data = chunk_data(new_data)
+            all_cached_data.append(new_data)
+            if self.cache is not None:
+                try:
+                    self.cache.save(
+                        new_data,
+                        source,
+                        missing_vars,
+                        cache_days if len(cache_days) > 1 else cache_days[0],
+                        is_static=is_static,
+                        kwargs_str=kwargs_str,
+                    )
+                except PermissionError:
+                    logging.warning(
+                        "Cache directory is read-only. Data will not be saved to cache."
+                    )
+
+        def flush_missing_batch() -> None:
+            nonlocal missing_batch_dates
+            nonlocal missing_batch_cache_days
+            nonlocal missing_batch_vars
+            if not missing_batch_dates:
+                return
+            retrieve_missing(
+                missing_batch_vars,
+                missing_batch_dates,
+                missing_batch_cache_days,
+            )
+            missing_batch_dates = []
+            missing_batch_cache_days = []
+            missing_batch_vars = []
 
         for date in pd.date_range(dates[0], dates[-1], freq="D", tz="UTC").tz_localize(
             None
@@ -431,7 +467,7 @@ class DataProvider:
             logging.warning(
                 "Reading %s %s data from cache for %s",
                 source,
-                ",".join([v[0] for v in variables]),
+                ",".join(variables),
                 date,
             )
             if self.cache is not None:
@@ -440,12 +476,13 @@ class DataProvider:
                     variables,
                     date,
                     is_static=is_static,
-                    kwargs_str=self.get_kwargs_str(kwargs),
+                    kwargs_str=kwargs_str,
                 )
             else:
                 cached = xr.Dataset()
                 missing_vars = variables
             if len(cached) > 0:
+                flush_missing_batch()
                 time_dim = (
                     "time"
                     if "time" in cached.dims
@@ -471,36 +508,25 @@ class DataProvider:
             if missing_vars:
                 logging.warning(
                     "Couldn't find %s in cache for %s",
-                    ",".join([m[0] for m in missing_vars]),
+                    ",".join(missing_vars),
                     date,
                 )
-                logging.warning(
-                    "Retrieving %s from source %s",
-                    ",".join([m[0] for m in missing_vars]),
-                    source,
-                )
-                kwargs_copy = copy.deepcopy(kwargs)
-                for k in self._override_kwargs:
-                    kwargs_copy.pop(k, None)
-                new_data = self.retriever.retrieve(
-                    source, missing_vars, dates_to_retrieve, **kwargs_copy
-                )
-                new_data = chunk_data(new_data)
-                all_cached_data.append(new_data)
-                if self.cache is not None:
-                    try:
-                        self.cache.save(
-                            new_data,
-                            source,
-                            missing_vars,
-                            date,
-                            is_static=is_static,
-                            kwargs_str=self.get_kwargs_str(kwargs),
-                        )
-                    except PermissionError:
-                        logging.warning(
-                            "Cache directory is read-only. Data will not be saved to cache."
-                        )
+                if can_batch_dates and len(cached) == 0:
+                    if missing_batch_vars == missing_vars:
+                        missing_batch_dates.extend(dates_to_retrieve)
+                        missing_batch_cache_days.append(date)
+                    else:
+                        flush_missing_batch()
+                        missing_batch_dates = dates_to_retrieve.copy()
+                        missing_batch_cache_days = [date]
+                        missing_batch_vars = missing_vars.copy()
+                else:
+                    flush_missing_batch()
+                    retrieve_missing(missing_vars, dates_to_retrieve, [date])
+
+        flush_missing_batch()
+        if len(all_cached_data) == 0:
+            return xr.Dataset()
 
         # Merge all datasets
         time_dim = (
@@ -603,7 +629,7 @@ def _format_kwarg(k: str, v: Any) -> str | None:
         if len(v) != 4:
             raise ValueError(f"Invalid bbox length for {k}: {v}")
         return f"{v[0]}_{v[1]}_{v[2]}_{v[3]}"
-    if k in ["levels", "step_hours", "ensemble_members", "use_limitation"]:
+    if k in ["levels", "step_hours", "ensemble_members"]:
         # shorten ensemble_members to ens
         if k == "ensemble_members":
             k = "ens"
@@ -611,11 +637,6 @@ def _format_kwarg(k: str, v: Any) -> str | None:
             k = "step"
         if k == "levels":
             k = "level"
-        # shorten use_limitation to limitation and skip if value is 20
-        if k == "use_limitation":
-            if v[0] == 20:
-                return None
-            k = "limitation"
         if len(v) == 0:
             raise ValueError(f"Empty values for {k}: {v}")
         if len(list(v)) == 1:

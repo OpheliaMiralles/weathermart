@@ -8,7 +8,7 @@ xmin, xmax = -8.08, 40.73
 ymin, ymax = 53.14, 73.06
 bbox = (xmin, ymin, xmax, ymax)
 p = default_provider()
-dates_missing = list(pd.date_range('2025-09-23', '2025-09-24', freq='D'))
+dates_missing = list(pd.date_range("2023-09-29", "2023-09-29", freq="D"))
 def retrieve():
     for date in dates_missing:
         try:
@@ -22,9 +22,10 @@ def retrieve():
                 "cloud_mask", "cloud_top_height", 'cloud_top_quality'],
             bbox=bbox,
             dates=[pd.to_datetime(date)],
-            storage_key="",
+            storage_key="msg_benchmark",
             eumdac_credentials_path=".eumdac_credentials.json",
-            resolution='3km')
+            resolution='3km',
+            test=True)
             print(data.sizes, flush=True)
             end = datetime.datetime.utcnow()
             print(f"Retrieval took {end - start}")

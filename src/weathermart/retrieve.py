@@ -1,4 +1,5 @@
 import datetime
+from collections.abc import Sequence
 from typing import Any
 
 import pandas as pd
@@ -6,7 +7,6 @@ import xarray as xr
 
 from weathermart.base import BaseRetriever
 from weathermart.base import checktype
-from weathermart.base import variables_metadata
 
 
 class DataRetriever(BaseRetriever):
@@ -24,15 +24,31 @@ class DataRetriever(BaseRetriever):
         A list of retriever instances used to fetch data.
     """
 
-    def __init__(self, subretrievers: tuple[BaseRetriever, ...]) -> None:
+    def __init__(self, subretrievers: Sequence[BaseRetriever]) -> None:
+        self._subretrievers: tuple[BaseRetriever, ...] = ()
+        self._retriever_by_source: dict[str, BaseRetriever] = {}
         self.subretrievers = subretrievers
+
+    @property
+    def subretrievers(self) -> tuple[BaseRetriever, ...]:
+        return self._subretrievers
+
+    @subretrievers.setter
+    def subretrievers(self, subretrievers: Sequence[BaseRetriever]) -> None:
+        self._subretrievers = tuple(subretrievers)
+        self._retriever_by_source = {}
+        for retriever in self._subretrievers:
+            for source in retriever.sources:
+                self._retriever_by_source.setdefault(source.upper(), retriever)
+
+    def get_retriever(self, source: str) -> BaseRetriever | None:
+        return self._retriever_by_source.get(source.upper())
 
     def retrieve(
         self,
         source: str,
-        variables: list[tuple[str, dict]],
+        variables: list[str] | str,
         dates: datetime.date | str | pd.Timestamp | list[Any],
-        rename: bool = False,
         **kwargs: Any,
     ) -> xr.Dataset:
         """
@@ -53,9 +69,6 @@ class DataRetriever(BaseRetriever):
             and associated properties.
         dates : list of datetime.date or datetime.date
             A single date or list of dates for data retrieval.
-        rename : bool, optional
-            If True, the retrieved dataset's variables will be renamed according to
-            the retriever's variable mappings. Defaults to True.
         **kwargs : dict
             Additional keyword arguments to be passed to each subretriever's retrieve method.
 
@@ -74,44 +87,26 @@ class DataRetriever(BaseRetriever):
         dates, variables = checktype(dates, variables)
         # check if all kwargs are valid
         self.validate_kwargs(list(kwargs.keys()))
-        for r in self.subretrievers:
-            variables_to_retrieve = []
-            if source.upper() in r.sources:
-                for vname, props in variables:
-                    if vname not in r.variables:
-                        raise ValueError(
-                            f"Variables {vname} not defined for source {source}"
-                        )
-                    variables_to_retrieve.append((vname, props))
-                retriever_kwargs = r.get_kwargs()
-                relevant_kwargs = {
-                    k: kwargs[k] for k in retriever_kwargs if k in kwargs
-                }
-                ds = r.retrieve(source, variables_to_retrieve, dates, **relevant_kwargs)
-                # check if dataset is sorted by time
-                time_dim = (
-                    "forecast_reference_time"
-                    if "forecast_reference_time" in ds.dims
-                    else "time"
-                )
-                if not ds[time_dim].to_index().is_monotonic_increasing:
-                    raise RuntimeError(
-                        f"Time coordinate for retriever {r}, source {source} and date {dates} is not sorted."
-                    )
-                if not rename:
-                    return ds
-                var_names = [m[0] for m in variables_to_retrieve]
-                ds = ds.rename(
-                    {
-                        k[next(i for i, v in enumerate(k) if v in ds)]: j
-                        for j, k in r.variables.items()
-                        if j in var_names and any(v in ds for v in k)
-                    }
-                )
-                vars_retrieved = [v for v in var_names if v in ds.data_vars]
-                ds = ds[vars_retrieved]
-                for variable in vars_retrieved:
-                    if variable in variables_metadata:
-                        ds[variable].attrs.update(variables_metadata[variable])
-                return ds
-        raise ValueError(f"No retriever defined for source {source}")
+        retriever = self.get_retriever(source)
+        if retriever is None:
+            raise ValueError(f"No retriever defined for source {source}")
+
+        variables_to_retrieve = []
+        for vname in variables:
+            if vname not in retriever.variables:
+                raise ValueError(f"Variables {vname} not defined for source {source}")
+            variables_to_retrieve.append(vname)
+        retriever_kwargs = retriever.get_kwargs()
+        relevant_kwargs = {k: kwargs[k] for k in retriever_kwargs if k in kwargs}
+        ds = retriever.retrieve(source, variables_to_retrieve, dates, **relevant_kwargs)
+        # check if dataset is sorted by time
+        time_dim = (
+            "forecast_reference_time"
+            if "forecast_reference_time" in ds.dims
+            else "time"
+        )
+        if not ds[time_dim].to_index().is_monotonic_increasing:
+            raise RuntimeError(
+                f"Time coordinate for retriever {retriever}, source {source} and date {dates} is not sorted."
+            )
+        return ds

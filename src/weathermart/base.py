@@ -3,10 +3,13 @@ Module: base
 Provides utility functions and classes for the data provider.
 """
 
+from __future__ import annotations
+
 import datetime
 import inspect
 from abc import ABC
 from abc import abstractmethod
+from collections.abc import Sequence
 from typing import Any
 
 import dask
@@ -16,6 +19,7 @@ import xarray as xr
 from weathermart.variable_naming import get_variables
 
 variables_metadata = get_variables()
+dask.config.set({"array.chunk-size": "256MiB"})
 
 
 class BaseRetriever(ABC):
@@ -32,8 +36,8 @@ class BaseRetriever(ABC):
     Can also be a generic name for the measurement data, e.g. "SATELLITE" or "RADAR",
     and it will not be used for retrieval but will define the folder name.
     """
-    variables: dict[str, list[str]]
-    """Variable mapping for each source. User provided variables should match COSMO/ICON
+    variables: list[str] | str
+    """Available variables for each source. User provided variables should match COSMO/ICON
     convention
     (https://meteoswiss.atlassian.net/wiki/spaces/~atr/pages/23987112/2.2+COSMO-1E+Operational+Products).
     The mapping and metadata for each variable are defined in this page
@@ -55,7 +59,7 @@ class BaseRetriever(ABC):
         "kwargs",
     ]
     """Arguments to ignore when checking for valid kwargs"""
-    subretrievers: tuple["BaseRetriever", ...] = ()
+    subretrievers: Sequence[BaseRetriever] = ()
     """Sub-retrievers for data retrieval. This is used for composite retrievers that
     combine multiple retrievers. For example, a retriever that retrieves data from
     multiple sources or a retriever that retrieves data from multiple APIs.
@@ -64,12 +68,14 @@ class BaseRetriever(ABC):
     """Priority of the retriever. Higher priority retrievers are preferred when multiple
     retrievers support the same source.
     """
+    batch_dates: bool = False
+    """Whether the provider can batch multiple missing days into one retrieve() call."""
 
     @abstractmethod
     def retrieve(
         self,
         source: str,
-        variables: list[tuple[str, dict]],
+        variables: list[str] | str,
         dates: datetime.date | str | pd.Timestamp | list[Any],
     ) -> xr.Dataset:
         """
@@ -164,74 +170,41 @@ class BaseRetriever(ABC):
                 )
 
 
-dask.config.set({"array.chunk-size": "256MiB"})
-
-
 def checktype(
     dates: datetime.date | str | pd.Timestamp | list[Any],
     variables: str | list[Any],
-) -> tuple[list[pd.Timestamp], list[tuple[str, dict]]]:
+) -> tuple[list[pd.Timestamp], list[str]]:
     """
-    Process and normalize input dates and variables.
+    Normalize input dates and variables.
 
-    Parameters
-    ----------
-    dates : datetime.date, str, pd.Timestamp, or list
-        Input date(s) to be normalized.
-    variables : str or list
-        Variable(s) to be normalized. If a single string is provided, it will be converted
-        to a list of one tuple (variable, {}).
-        If a list of strings is provided, each will be converted to a tuple.
-
-    Returns
-    -------
-    tuple
-        A tuple (dates, variables) where dates is a sorted list of timestamps and variables is a
-        list of tuples (variable, {}).
+    - dates -> list[pd.Timestamp] (sorted, unique if list-like)
+    - variables -> list[str]
     """
+    # ---- dates ----
     if isinstance(dates, list):
-        dates = sorted({pd.to_datetime(date) for date in dates})
-    if isinstance(dates, datetime.date):
-        dates = [dates]
+        dates_out = sorted({pd.to_datetime(d) for d in dates})
+    elif isinstance(dates, datetime.date) and not isinstance(dates, pd.Timestamp):
+        # datetime.date (and datetime.datetime) -> Timestamp
+        dates_out = [pd.to_datetime(dates)]
     elif isinstance(dates, str):
-        dates = [pd.to_datetime(dates)]
-    if isinstance(dates, pd.Timestamp):
-        dates = [dates]
+        dates_out = [pd.to_datetime(dates)]
+    elif isinstance(dates, pd.Timestamp):
+        dates_out = [dates]
+    else:
+        # fall back (in case callers pass e.g. numpy datetime64)
+        dates_out = [pd.to_datetime(dates)]
+
+    # ---- variables ----
     if isinstance(variables, str):
-        variables = [(variables, {})]
-    elif (
-        bool(variables)
-        and isinstance(variables, list)
-        and all(isinstance(elem, str) for elem in variables)
-    ):
-        variables = [(v, {}) for v in variables]
-    return dates, variables
+        vars_out = [variables]
+    elif isinstance(variables, list):
+        vars_out = variables
+    else:
+        try:
+            vars_out = [v for v in variables if isinstance(v, str)]
+        except TypeError:
+            raise TypeError(
+                f"variables must be str or list[str], got {type(variables)}"
+            )
 
-
-def merge_dicts_with_list_str(*dicts: dict[str, list[str]]) -> dict[str, list[str]]:
-    """
-    Merge multiple dictionaries whose values are lists of strings.
-
-    For any keys that appear in more than one dictionary, the resulting list is the union
-    of the lists with duplicates removed while preserving the order of first occurrence.
-
-    Parameters
-    ----------
-    *dicts : dict
-        Arbitrary number of dictionaries with list-of-string values.
-
-    Returns
-    -------
-    dict
-        A single dictionary with merged keys.
-    """
-    result: dict[str, list[Any]] = {}
-    for d in dicts:
-        for key, val in d.items():
-            if key in result:
-                # Merge lists preserving order and uniqueness.
-                seen = set(result[key])
-                result[key].extend(item for item in val if item not in seen)
-            else:
-                result[key] = val.copy()
-    return result
+    return dates_out, vars_out
