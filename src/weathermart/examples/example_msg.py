@@ -13,7 +13,7 @@ def retrieve():
     for date in dates_missing:
         try:
             print(f"Retrieving date {date.date()}", flush=True)
-            start = datetime.datetime.utcnow()
+            start = datetime.datetime.now(datetime.UTC)
             data = p.provide(
             source='MSG_SEVIRI',
             variables=["VIS006", "VIS008", "IR_016", "IR_039",
@@ -22,12 +22,12 @@ def retrieve():
                 "cloud_mask", "cloud_top_height", 'cloud_top_quality'],
             bbox=bbox,
             dates=[pd.to_datetime(date)],
-            storage_key="msg_benchmark",
+            storage_key="test",
             eumdac_credentials_path=".eumdac_credentials.json",
             resolution='3km',
             test=True)
             print(data.sizes, flush=True)
-            end = datetime.datetime.utcnow()
+            end = datetime.datetime.now(datetime.UTC)
             print(f"Retrieval took {end - start}")
         except Exception as e:
             print(f"Failed retrieving date {date.date()}: {e}")

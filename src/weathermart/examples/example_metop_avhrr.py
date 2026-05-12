@@ -10,17 +10,6 @@ from weathermart.default_provider import default_provider  # noqa: E402
 from weathermart.retrievers.satellite import plot_polar  # noqa: E402
 
 p = default_provider()
-vars_iasi = ["temp_15um", "swir_36um"]  # TODO: add all interesting channels in supported variables
-vars_ascat = ["wvc_index",
-            "model_speed",
-            "model_dir",
-            "ice_prob",
-            "ice_age",
-            "wvc_quality_flag",
-            "wind_speed",
-            "wind_dir",
-            "bs_distance",
-]
 vars_avhrr = ['1', '2', '3a', '4', '5', 'satellite_zenith_angle', 'solar_zenith_angle']
 
 

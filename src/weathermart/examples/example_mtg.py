@@ -15,20 +15,20 @@ def retrieve():
     for date in dates_missing:
         try:
             print(f"Retrieving date {date.date()}", flush=True)
-            start = datetime.datetime.utcnow()
+            start = datetime.datetime.now(datetime.UTC)
             data = p.provide(
                 source="MTG",
                 variables=["flash_count"],
                 product="li_flashes",
                 bbox=bbox,
                 dates=[pd.to_datetime(date)],
-                storage_key="mtg_example_li",
+                storage_key="li_test",
                 eumdac_credentials_path=".eumdac_credentials.json",
                 resolution="3km",
                 test=True,
             )
             print(data.sizes, flush=True)
-            end = datetime.datetime.utcnow()
+            end = datetime.datetime.now(datetime.UTC)
             print(f"Retrieval took {end - start}")
         except Exception as e:
             print(f"Failed retrieving date {date.date()}: {e}")

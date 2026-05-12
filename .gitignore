@@ -8,6 +8,8 @@ wheels/
 .vscode
 *.pytest*
 *py.typed
+*cache
+.vscode
 
 
 # Virtual environments
