@@ -19,9 +19,9 @@ dependencies = [
     "pandas>=2.3.2",
     "wradlib>=2.4.0",
     "xarray>=2025.6.1",
-    "zarr>=2.18.3",
+    "zarr<=2.18.3",
+    "numcodecs<0.16",
     "python-geotiepoints>=1.8.0",
-    "coda>=0.1.0",
     "future>=1.0.0",
 ]
 

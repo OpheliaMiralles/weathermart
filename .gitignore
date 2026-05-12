@@ -8,6 +8,8 @@ wheels/
 .vscode
 *.pytest*
 *py.typed
+*cache
+.vscode
 
 
 # Virtual environments
@@ -17,6 +19,7 @@ uv.lock
 
 # credentials
 *credentials.json
+*token.json
 
 #jobs
 run*.sh

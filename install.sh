@@ -11,6 +11,8 @@ echo "Activating venv..."
 source "$ACTIVATE_SCRIPT"
 echo "Python version:"
 python --version
+echo "Removing unrelated PyPI coda package if present..."
+python -m pip uninstall -y coda || true
 mkdir -p ~/software
 cd ~/software
 mkdir -p coda
@@ -36,6 +38,8 @@ make install
 echo "Installing CODA Python into venv..."
 echo "$CODA_PREFIX/lib/python3.12/site-packages" \
     > $VENV_DIR/lib/python3.12/site-packages/coda_path.pth
+echo "Verifying CODA Python bindings..."
+python -c "import coda; print(coda.__file__); assert hasattr(coda, 'open')"
 
 cd ~/software
 mkdir -p harp

@@ -574,7 +574,7 @@ class EumetsatRetriever(BaseRetriever):
                 for f in files:
                     try:
                         if reader == "li_l2_nc":
-                            ds = xr.open_dataset(f)
+                            ds = xr.open_dataset(f, engine="h5netcdf")
                             if "x" in ds.data_vars and "y" in ds.data_vars:
                                 ds = ds.set_coords(["x", "y"])
                             pixel_id = np.char.add(
@@ -902,6 +902,9 @@ def plot_polar(ds, t, var):
     if "longitude" in ds and "latitude" in ds:
         lon = ds["longitude"].values.ravel()
         lat = ds["latitude"].values.ravel()
+    elif "lon" in ds and "lat" in ds:
+        lon = ds["lon"].values.ravel()
+        lat = ds["lat"].values.ravel()
     elif "x" in ds.coords and "y" in ds.coords:
         lon2d, lat2d = np.meshgrid(ds["x"].values, ds["y"].values)
         lon = lon2d.ravel()
