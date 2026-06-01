@@ -21,7 +21,7 @@ repos:
       - id: python-check-blanket-noqa # Check for # noqa: all
       - id: python-no-log-warn # Check for log.warn
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.9
+    rev: v0.15.15
     hooks:
       - id: ruff-check
         args:
@@ -34,7 +34,7 @@ repos:
     hooks:
       - id: sphinx-lint
   - repo: https://github.com/jshwi/docsig # Check docstrings against function sig
-    rev: v0.82.2
+    rev: v0.86.0
     hooks:
       - id: docsig
         args:
