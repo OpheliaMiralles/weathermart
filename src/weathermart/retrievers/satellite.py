@@ -407,7 +407,10 @@ def _sanitize_dataset_for_zarr(ds: xr.Dataset) -> xr.Dataset:
 
 
 def _materialize_dataset_single_threaded(ds: xr.Dataset) -> xr.Dataset:
-    if any(getattr(ds[var_name].data, "chunks", None) is not None for var_name in ds.data_vars):
+    if any(
+        getattr(ds[var_name].data, "chunks", None) is not None
+        for var_name in ds.data_vars
+    ):
         with warnings.catch_warnings():
             warnings.filterwarnings(
                 "ignore",
@@ -595,7 +598,8 @@ class EumetsatRetriever(BaseRetriever):
                             selected = {
                                 source_name: target_name
                                 for source_name, target_name in rename_map.items()
-                                if target_name in satpy_vars and source_name in ds.data_vars
+                                if target_name in satpy_vars
+                                and source_name in ds.data_vars
                             }
                             if not selected:
                                 raise KeyError(
@@ -634,7 +638,9 @@ class EumetsatRetriever(BaseRetriever):
                                     ds = scn.to_xarray().persist()
                                 else:
                                     ds = scn.to_xarray_dataset()
-                                    ds = ds.astype({v: np.float32 for v in ds.data_vars})
+                                    ds = ds.astype(
+                                        {v: np.float32 for v in ds.data_vars}
+                                    )
                             t = scn.start_time or extract_time_flex(Path(f).stem)
                         elif reader == "coda":
                             ds, t = iasi_metop_to_xarray(
@@ -685,9 +691,7 @@ class EumetsatRetriever(BaseRetriever):
                     + str(available_readers())
                 )
             satpy_vars = list(
-                set(product_cfg["variables"]).intersection(
-                    set(variables)
-                )
+                set(product_cfg["variables"]).intersection(set(variables))
             )
             if len(satpy_vars) == 0:
                 logger.info(
@@ -910,7 +914,9 @@ def plot_polar(ds, t, var):
         lon = lon2d.ravel()
         lat = lat2d.ravel()
     else:
-        raise KeyError("Dataset must contain either longitude/latitude or x/y coordinates.")
+        raise KeyError(
+            "Dataset must contain either longitude/latitude or x/y coordinates."
+        )
     val = ds.sel(time=t)[var].values.ravel()
     # Project lon/lat -> polar stereographic meters
     central_lon = 15
