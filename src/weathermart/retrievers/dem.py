@@ -1,3 +1,4 @@
+import os
 import pathlib
 import tempfile
 import zipfile
@@ -11,6 +12,23 @@ from pyproj import CRS
 from pyproj import Transformer
 
 from weathermart.base import BaseRetriever
+
+
+def _get_tmpdir() -> str | None:
+    tmpdir = os.environ.get("WEATHERMART_TMPDIR")
+    if tmpdir is not None:
+        path = pathlib.Path(tmpdir)
+        path.mkdir(parents=True, exist_ok=True)
+        return str(path)
+
+    base = pathlib.Path("/lustre/storeB/users")
+    user = os.environ.get("USER")
+    if user is None or not base.exists():
+        return None
+
+    path = base / user / "tmp"
+    path.mkdir(parents=True, exist_ok=True)
+    return str(path)
 
 
 class DEMRetriever(BaseRetriever):
@@ -76,8 +94,9 @@ class DEMRetriever(BaseRetriever):
         response = requests.get(url, stream=True)
         if response.ok:
             block_size = 1024 * 10
+            tmpdir = _get_tmpdir()
             # Create a temporary file
-            with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+            with tempfile.NamedTemporaryFile(delete=False, dir=tmpdir) as temp_file:
                 temp_filename = temp_file.name
                 # Write the response content to the temporary file
                 for data in response.iter_content(block_size):
@@ -124,7 +143,7 @@ class DHM25Retriever(DEMRetriever):
     """
 
     sources = ("DHM25",)
-    variables = [s.lower() for s in sources]
+    variables = {s.lower(): [s.lower()] for s in sources}
     crs = "epsg:3035"
 
     @staticmethod
@@ -172,7 +191,7 @@ class DHM25Retriever(DEMRetriever):
         """
         # saves in tempfile to save time
         temp_filename = DEMRetriever.load_from_url(url)
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with tempfile.TemporaryDirectory(dir=_get_tmpdir()) as temp_dir:
             with zipfile.ZipFile(temp_filename, "r") as zip_ref:
                 zip_ref.extractall(temp_dir)
                 extracted_path = (
@@ -208,8 +227,8 @@ class CEDTMRetriever(DEMRetriever):
     """
 
     sources = ("CEDTM",)
-    variables = [s.lower() for s in sources]
-    crs = "epsg:2056"
+    variables = {s.lower(): [s.lower()] for s in sources}
+    crs = "epsg:3035"
 
     @classmethod
     def load_dtm(
@@ -218,6 +237,7 @@ class CEDTMRetriever(DEMRetriever):
         bounds: list[float] | tuple[float, float, float, float],
         source_crs: str | CRS,
         target_crs: str | CRS,
+        resolution: str | float | None = None,
     ) -> xr.DataArray:
         """
         Load and process CEDTM DEM data from a given URL within specified bounds.
@@ -232,6 +252,10 @@ class CEDTMRetriever(DEMRetriever):
             The source coordinate reference system.
         target_crs : str or pyproj.CRS
             The target coordinate reference system.
+        resolution : str or float, optional
+            Requested DEM resolution. Strings may use ``m`` or ``km`` suffixes.
+            Resolutions coarser than the native 30 m grid are approximated by taking
+            every Nth grid cell.
 
         Returns
         -------
@@ -247,15 +271,37 @@ class CEDTMRetriever(DEMRetriever):
         bbox = cls.get_projected_bbox(bounds, source_crs, target_crs)
         temp_filename = cls.load_from_url(url)
         dem = cast(xr.DataArray, open_rasterio(temp_filename))
-        dem = (
-            dem.sel(band=1, drop=True)
-            .sortby("y", ascending=True)
-            .sel(bbox)
-            .astype(np.float32)
-        )
+        dem = dem.sel(band=1, drop=True).sortby("y", ascending=True).sel(bbox)
+
+        if resolution is not None:
+            if isinstance(resolution, str):
+                if resolution.endswith("km"):
+                    resolution_m = float(resolution[:-2]) * 1000
+                elif resolution.endswith("m"):
+                    resolution_m = float(resolution[:-1])
+                else:
+                    resolution_m = float(resolution)
+            else:
+                resolution_m = float(resolution)
+            native_resolution_m = min(
+                abs(float(dem["x"][1] - dem["x"][0])),
+                abs(float(dem["y"][1] - dem["y"][0])),
+            )
+            if resolution_m < native_resolution_m:
+                raise ValueError(
+                    f"Argument resolution must be >= {native_resolution_m:g}m for {cls.__name__}."
+                )
+            stride = max(1, int(np.ceil(resolution_m / native_resolution_m)))
+            if stride > 1:
+                dem = dem.isel(
+                    y=slice(None, None, stride),
+                    x=slice(None, None, stride),
+                )
+
+        dem = dem.astype(np.float32)
         pathlib.Path(temp_filename).unlink()
         dem = dem.where(dem != -99999.0) / 10
-        dem = dem.chunk("auto").persist()
+        dem = dem.chunk("auto")
         return dem
 
     def retrieve(
@@ -265,6 +311,7 @@ class CEDTMRetriever(DEMRetriever):
         dates: Any,
         bounds: list[float] | tuple[float, float, float, float] | None = None,
         target_crs: str | CRS | None = None,
+        resolution: str | float | None = None,
     ) -> xr.Dataset:
         """
         Retrieve CEDTM DEM data for a given bounding box.
@@ -281,6 +328,9 @@ class CEDTMRetriever(DEMRetriever):
             Bounding box in the format [xmin, ymin, xmax, ymax]. Must be provided.
         target_crs : str or pyproj.CRS, optional
             The target coordinate reference system. Must be provided.
+        resolution : str or float, optional
+            Requested DEM resolution. Strings may use ``m`` or ``km`` suffixes.
+            For broad domains, a coarser setting such as ``500m`` can reduce memory use.
 
         Returns
         -------
@@ -304,6 +354,7 @@ class CEDTMRetriever(DEMRetriever):
             bounds,
             self.crs,
             target_crs,
+            resolution,
         )
         dem_dataset = dem.to_dataset(name=source.lower())
         dem_dataset.attrs["source"] = source.upper()
@@ -316,7 +367,7 @@ class NASADEMRetriever(DEMRetriever):
     """
 
     sources = ("NASADEM",)
-    variables = [s.lower() for s in sources]
+    variables = {s.lower(): [s.lower()] for s in sources}
     crs = "epsg:4326"
 
     @classmethod
