@@ -31,3 +31,4 @@ logs
 *.png
 *_bris.py
 plots
+*.csv
