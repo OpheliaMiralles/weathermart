@@ -26,18 +26,24 @@ uv.lock
 
 #jobs
 run*.sh
+!run_month.sh
+!run_month_eumetsat_aws.sh
 submit*.sh
+!submit_all.sh
+!submit_all_eumetsat_aws.sh
 logs
 *.csv
 
 #examples
+examples
 !docs/examples/
 !docs/examples/**
 *.png
 *_bris.py
 *_aws.py
 plots
-mars_requests*
+mars*
+!mars_all.py
 *.inp
 *.odb
 *.zarr

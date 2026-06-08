@@ -17,8 +17,30 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 Then install the package and development tools:
 
-```shell
-uv sync --all-extras --dev
+### Extras
+
+Some of the dependencies are split up into different extras. The extra dependency groups list as follows:
+
+| Source  | `<XYZ>` |
+| -------- | ------- |
+| EUMETSAT API | eumetsat |
+| Radar data (OPERA) | radar |
+| GRIB | eccodes |
+| DEM (Digital elevation model) | dem |
+
+## Implemented retrievers
+
+The data-provider package allows to retrieve data from:
+
+- **nwp forecasts** via gridefix and grib files on balfrin
+- **station observations** via jretrieve
+- **radar data** via MeteoFrance API
+- **EUMETSAT data** via EUMETSAT API
+- **dem raw products** from various sources via url queries.
+
+The retrievers can be accessed _individually_ or via the InputProvider, where data is _read from a cache_ before trying to retrieve. Available variables and their mapping to their original name are listed in the "variables" attribute of each retriever. To retrieve data (e.g. "U_10M") from a particular source (e.g. COSMO-1E) for given dates (e.g. 2021-01-01) you can call:
+```python
+ds = GribRetriever().retrieve("COSMO-1E", "U_10M", pd.to_datetime("2021-01-01"))
 ```
 
 ## Optional dependency groups
@@ -39,17 +61,17 @@ The FDB retriever also requires a working ECMWF FDB installation. See
 
 The currently registered retrievers are:
 
-| Retriever | Sources | Description |
-| --- | --- | --- |
-| `GribRetriever` | configured by file archive | GRIB data from local model archives. |
-| `FDBRetriever` | configured by FDB request | GRIB data from an ECMWF FDB installation. |
-| `OperaRetriever` | `OPERA` | OPERA radar composites from the MeteoFrance API. |
-| `EumetsatRetriever` | `MSG_SEVIRI`, `METOP`, `MTG`, `NOAA`, `AWS` | Geostationary and polar-orbiting EUMETSAT products. |
-| `MarsODBRetriever` | `MARS_ODB`, `ECMWF_ODB` | ECMWF MARS ODB radiance request files and optional submission. |
-| `MarsRetriever` | `MARS`, `ECMWF_MARS`, `MARS_GRIB` | ECMWF MARS requests. |
-| `CEDTMRetriever` | `CEDTM` | Copernicus DEM tiles. |
-| `NASADEMRetriever` | `NASADEM` | NASADEM tiles. |
-| `DHM25Retriever` | `DHM25` | Swiss DHM25 terrain data. |
+Finally, describe your request in a dict-like config:
+```python
+config = {
+    "dates": dates,
+    "OPERA": ["TOT_PREC"],
+    "MSG_SEVIRI": ["IR_039"],
+    "ICON-CH1-EPS": ["U_10M", "V_10M"],
+    "SYNOP": "tde200s0",
+    "NASADEM": "nasadem",
+}
+```
 
 Available variables are exposed on each retriever through its `variables`
 attribute.

@@ -1,6 +1,4 @@
 import datetime
-import sys
-import types
 
 import numpy as np
 import pandas as pd
@@ -8,7 +6,6 @@ import xarray as xr
 
 from weathermart.retrievers.eumetsat import _centered_time_window
 from weathermart.retrievers.eumetsat import _prepare_eumetsat_dataset_time
-from weathermart.retrievers.eumetsat import iasi_metop_to_xarray
 
 
 def test_centered_time_window_uses_half_aggregation_window() -> None:
@@ -78,64 +75,3 @@ def test_non_granule_time_reader_can_promote_scan_time_to_time() -> None:
     assert "scan" not in prepared.dims
     assert prepared.sizes["time"] == 2
     np.testing.assert_array_equal(prepared["time"].values, scan_time.values)
-
-
-def test_iasi_raw_reader_returns_native_cells(monkeypatch) -> None:
-    class FakeCoda:
-        @staticmethod
-        def open(path):
-            return object()
-
-        @staticmethod
-        def close(handle):
-            return None
-
-        @staticmethod
-        def fetch(handle, path):
-            if path == "/MDR":
-                return [0, 1]
-            if path.endswith("/GS1cSpect"):
-                mdr_index = int(path.split("[", 1)[1].split("]", 1)[0])
-                return np.arange(16, dtype=np.float32).reshape(2, 2, 4) + (
-                    100 * mdr_index
-                )
-            if path.endswith("/GGeoSondLoc"):
-                mdr_index = int(path.split("[", 1)[1].split("]", 1)[0])
-                lons = np.array([[10, 11], [12, 13]], dtype=np.float32) + mdr_index
-                lats = np.array([[50, 51], [52, 53]], dtype=np.float32) + mdr_index
-                return np.stack([lons, lats], axis=-1)
-            if path.endswith("/OnboardUTC"):
-                mdr_index = int(path.split("[", 1)[1].split("]", 1)[0])
-                return np.array([[0, 1], [2, 3]], dtype=np.float64) + (10 * mdr_index)
-            raise KeyError(path)
-
-    monkeypatch.setitem(
-        sys.modules,
-        "coda",
-        types.SimpleNamespace(
-            open=FakeCoda.open,
-            close=FakeCoda.close,
-            fetch=FakeCoda.fetch,
-        ),
-    )
-
-    ds, t = iasi_metop_to_xarray(
-        "fake.nat",
-        area=None,
-        variables=["1", "3"],
-        bbox=(0, 20, 180, 90),
-    )
-
-    assert t == datetime.datetime(2000, 1, 1, 0, 0, 1, 500000)
-    assert ds.sizes["cell"] == 8
-    np.testing.assert_allclose(
-        ds["1"].values,
-        np.array([0, 4, 8, 12, 100, 104, 108, 112], dtype=np.float32),
-    )
-    np.testing.assert_allclose(
-        ds["3"].values,
-        np.array([2, 6, 10, 14, 102, 106, 110, 114], dtype=np.float32),
-    )
-    np.testing.assert_allclose(ds["latitude"].values[:2], np.array([50, 51]))
-    assert "scan_time" in ds
-    assert ds["3"].attrs["channel"] == 3

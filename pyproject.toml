@@ -45,6 +45,7 @@ NetAtmoRetriever = "weathermart.retrievers:NetAtmoRetriever"
 TitanRetriever = "weathermart.retrievers:TitanRetriever"
 NordicRadarRetriever = "weathermart.retrievers:NordicRadarRetriever"
 FrostRetriever = "weathermart.retrievers:FrostRetriever"
+MarsODBRetriever = "weathermart.retrievers:MarsODBRetriever"
 
 [dependency-groups]
 dev = [
