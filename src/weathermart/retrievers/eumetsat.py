@@ -21,11 +21,19 @@ import xarray as xr
 
 from weathermart.base import BaseRetriever
 from weathermart.base import checktype
-from weathermart.utils import NORDIC_DOMAIN
 from weathermart.utils import get_nrows_ncols_from_domain_size_and_reskm
+from weathermart.utils import NORTH_LATITUDE_20_DOMAIN_FILTER
 
 max_workers = min(os.cpu_count() or 4, 8)
 logger = logging.getLogger(__name__)
+RADIANCE_METADATA_VARIABLES = [
+    "latitude",
+    "longitude",
+    "satellite_zenith_angle",
+    "satellite_azimuth_angle",
+    "solar_zenith_angle",
+    "solar_azimuth_angle",
+]
 EUMETSAT_SOURCES = {
     "MSG_SEVIRI": {
         "platform": "MSG (SEVIRI)",
@@ -49,7 +57,6 @@ EUMETSAT_SOURCES = {
                     "WV_062",
                     "WV_073",
                 ],
-                "round_time": "15min",
                 "reader": "seviri_l1b_native",
                 "format": ".nat",
                 "description": (
@@ -62,7 +69,6 @@ EUMETSAT_SOURCES = {
                 "code": "EO:EUM:DAT:MSG:CTH",
                 "format": ".grb",
                 "reader": "seviri_l2_grib",
-                "round_time": "15min",
                 "variables": ["cloud_top_height", "cloud_top_quality"],
                 "description": (
                     "NWC SAF cloud top height/pressure/temperature. "
@@ -105,7 +111,6 @@ EUMETSAT_SOURCES = {
                 ],
                 "format": ".nat",
                 "native_res": "1km",
-                "round_time": "360min",
                 "reader": "avhrr_l1b_eps",
                 "description": (
                     "High-resolution polar imager. "
@@ -116,8 +121,6 @@ EUMETSAT_SOURCES = {
             "iasi_radiances": {
                 "code": "EO:EUM:DAT:METOP:IASIL1C-ALL",
                 "variables": ["temp_15um", "swir_36um"],
-                "valid_times": slice("09:00:00", "21:00:00"),
-                "round_time": "770min",
                 "native_res": "12km",
                 "reader": "coda",
                 "format": ".nat",
@@ -126,7 +129,6 @@ EUMETSAT_SOURCES = {
             "ascat_coastal_winds": {
                 "code": "EO:EUM:DAT:METOP:OSI-104",
                 "native_res": "12.5km",
-                "valid_times": slice("09:00:00", "21:00:00"),
                 "variables": [
                     "wvc_index",
                     "model_speed",
@@ -139,7 +141,6 @@ EUMETSAT_SOURCES = {
                     "bs_distance",
                 ],
                 "reader": "xarray_ascat_winds",
-                "round_time": "770min",
                 "format": ".nc",
                 "description": (
                     "High-resolution coastal ASCAT winds (Metop-B). "
@@ -171,17 +172,19 @@ EUMETSAT_SOURCES = {
                     "20",
                     "21",
                     "22",
+                    *RADIANCE_METADATA_VARIABLES,
+                    "quality_pixel_bitmask",
+                    "data_quality_bitmask",
                 ],
-                "valid_times": slice("09:00:00", "21:00:00"),
                 "native_res": "16km",
-                "reader": "atms_l1b_nc",
+                "reader": "atms_l1c_cdr_nc",
                 "format": ".nc",
-                "description": ("MW radiances. 22 spectral channels."),
+                "select_by_overlap": True,
+                "description": ("ATMS Level 1C CDR MW radiances. 22 spectral channels."),
             },
             "mhs_radiances": {
                 "code": "EO:EUM:DAT:METOP:MHSL1",
                 "variables": ["1", "2", "3", "4", "5"],
-                "valid_times": slice("09:00:00", "21:00:00"),
                 "native_res": "16km",
                 "reader": "mhs_l1c_aapp",
                 "format": ".nat",
@@ -198,7 +201,6 @@ EUMETSAT_SOURCES = {
             "li_flashes": {
                 "code": "EO:EUM:DAT:0686",
                 "variables": ["flash_count"],
-                "round_time": "2min",
                 "format": ".nc",
                 "reader": "li_l2_nc",
                 "description": (
@@ -209,7 +211,6 @@ EUMETSAT_SOURCES = {
             "li_flash_area": {
                 "code": "EO:EUM:DAT:0687",
                 "variables": ["flash_area"],
-                "round_time": "2min",
                 "format": ".nc",
                 "reader": "li_l2_nc",
                 "description": (
@@ -220,7 +221,6 @@ EUMETSAT_SOURCES = {
             "all_sky_radiance": {
                 "code": "EO:EUM:DAT:0799",
                 "variables": ["HRV"],
-                "round_time": "10min",
                 "reader": "fci_l1c_nc",
                 "format": [".bufr", ".nc"],
                 "description": (
@@ -239,11 +239,35 @@ EUMETSAT_SOURCES = {
             "all_sky_radiance_polar": {
                 "code": "EO:EUM:DAT:0370",
                 "variables": ["radiance"],
-                "round_time": "360min",
                 "reader": "goes_imager_nc",
                 "format": ".nc",
                 "description": (
                     "Polar-orbiting NOAA radiance product accessed via EUMETSAT. Provides radiance measurements from polar imagers/sounders."
+                ),
+            },
+        },
+    },
+    "AWS": {
+        "platform": "Arctic Weather Satellite Proto-Flight Model",
+        "type": "polar/orbiting",
+        "freq": "14-15> passes/day",
+        "native_res": "16km",
+        "products": {
+            "mwr_l1b": {
+                "code": "EO:EUM:DAT:0905",
+                "variables": [
+                    *[str(channel) for channel in range(1, 20)],
+                    *RADIANCE_METADATA_VARIABLES,
+                    "scan_number",
+                    "surface_type",
+                ],
+                "native_res": "16km",
+                "reader": "aws_mwr_l1b_nc",
+                "format": ".nc",
+                "select_by_overlap": True,
+                "description": (
+                    "MWR Level 1B brightness temperatures from the Arctic Weather "
+                    "Satellite. Channels are selected with string channel numbers."
                 ),
             },
         },
@@ -315,6 +339,7 @@ rate_limiter = RateLimiter(rate_per_sec=20)
 RE_YYYYMMDD_HHMMSS_FLEX = re.compile(
     r"(?<!\d)(?P<date>\d{8})(?P<sep>[-_]?)(?P<time>\d{6})(?!\d)"
 )
+RE_AWS_SENSING_WINDOW = re.compile(r"_G_O_(?P<start>\d{14})_(?P<end>\d{14})")
 
 
 def extract_time_flex(name: str) -> datetime.datetime | None:
@@ -322,6 +347,25 @@ def extract_time_flex(name: str) -> datetime.datetime | None:
     if not m:
         return None
     return datetime.datetime.strptime(m.group("date") + m.group("time"), "%Y%m%d%H%M%S")
+
+
+def extract_aws_sensing_start(name: str) -> datetime.datetime | None:
+    m = RE_AWS_SENSING_WINDOW.search(name)
+    if not m:
+        return None
+    return datetime.datetime.strptime(m.group("start"), "%Y%m%d%H%M%S")
+
+
+def extract_aws_sensing_window(
+    name: str,
+) -> tuple[datetime.datetime, datetime.datetime] | None:
+    m = RE_AWS_SENSING_WINDOW.search(name)
+    if not m:
+        return None
+    return (
+        datetime.datetime.strptime(m.group("start"), "%Y%m%d%H%M%S"),
+        datetime.datetime.strptime(m.group("end"), "%Y%m%d%H%M%S"),
+    )
 
 
 def retry_download(fn):
@@ -343,8 +387,37 @@ def retry_download(fn):
     return wrapper
 
 
-def round_to_nearest_minutes(dt: datetime.datetime, freq=15) -> datetime.datetime:
-    return pd.Timestamp(dt).floor(f"{freq}min").to_pydatetime()
+def _time_window_centers(values, window: str | None) -> pd.DatetimeIndex:
+    times = pd.to_datetime(values)
+    if window is None:
+        return pd.DatetimeIndex(times)
+    half_window = pd.to_timedelta(window) / 2
+    return pd.DatetimeIndex(times + half_window).floor(window)
+
+
+def _centered_time_window(
+    analysis_time: pd.Timestamp,
+    window: str | None,
+) -> tuple[datetime.datetime, datetime.datetime]:
+    analysis_time = pd.to_datetime(analysis_time)
+    if analysis_time.tzinfo is not None:
+        analysis_time = analysis_time.tz_convert(None)
+    if window is None:
+        start = analysis_time
+        end = analysis_time
+    else:
+        half_window = pd.to_timedelta(window) / 2
+        start = analysis_time - half_window
+        end = analysis_time + half_window
+    return start.to_pydatetime(), end.to_pydatetime()
+
+
+def _stack_dims_to_cell(ds: xr.Dataset, dims: tuple[str, ...]) -> xr.Dataset:
+    stack_dims = tuple(dim for dim in dims if dim in ds.dims)
+    if not stack_dims:
+        return ds
+    ds = ds.stack(cell=stack_dims).reset_index("cell")
+    return ds.assign_coords(cell=np.arange(ds.sizes["cell"], dtype=np.int64))
 
 
 def _encode_satellite_attr_value(value: Any) -> Any:
@@ -378,7 +451,7 @@ def _sanitize_dataset_for_zarr(ds: xr.Dataset) -> xr.Dataset:
                     ds[var_name].attrs.pop("grid_mapping")
 
     coordinates = ds.attrs.get("coordinates")
-    if isinstance(coordinates, (list, tuple)):
+    if isinstance(coordinates, list | tuple):
         coordinates = [str(coord) for coord in coordinates if str(coord) in ds.coords]
         if coordinates:
             ds.attrs["coordinates"] = " ".join(coordinates)
@@ -392,7 +465,7 @@ def _sanitize_dataset_for_zarr(ds: xr.Dataset) -> xr.Dataset:
         attrs = ds[var_name].attrs
         attrs.pop("metadata", None)
         coordinates = attrs.get("coordinates")
-        if isinstance(coordinates, (list, tuple)):
+        if isinstance(coordinates, list | tuple):
             coordinates = [
                 str(coord) for coord in coordinates if str(coord) in ds[var_name].coords
             ]
@@ -423,6 +496,39 @@ def _materialize_dataset_single_threaded(ds: xr.Dataset) -> xr.Dataset:
     return ds
 
 
+def _use_scan_time_as_time(ds: xr.Dataset) -> xr.Dataset:
+    if "scan_time" not in ds:
+        raise ValueError("time_index='scan' requires a scan_time variable")
+
+    scan_dim = ds["scan_time"].dims[0]
+    scan_time = pd.to_datetime(ds["scan_time"].values)
+    ds = ds.drop_vars("scan_time")
+    if scan_dim != "time":
+        ds = ds.rename({scan_dim: "time"})
+    ds = ds.assign_coords(time=("time", scan_time))
+    return ds
+
+
+def _prepare_eumetsat_dataset_time(
+    ds: xr.Dataset,
+    t: datetime.datetime,
+    *,
+    reader: str | None,
+    time_index: str,
+) -> xr.Dataset:
+    if time_index == "scan" and "scan_time" in ds:
+        if "cell" in ds["scan_time"].dims:
+            raise ValueError(
+                "time_index='scan' is not supported after swath dimensions are "
+                "stacked to cell; use time_index='granule'."
+            )
+        ds = _use_scan_time_as_time(ds)
+    ds = _sanitize_dataset_for_zarr(ds)
+    if "time" not in ds.dims:
+        ds = ds.expand_dims(time=[t])
+    return ds
+
+
 class EumetsatRetriever(BaseRetriever):
     """
     Generic EUMETSAT retriever for geostationary + polar satellites.
@@ -439,11 +545,15 @@ class EumetsatRetriever(BaseRetriever):
         variables: list[str] | str,
         dates: datetime.date | str | pd.Timestamp | list[Any],
         *,
-        bbox: tuple[float, float, float, float] = NORDIC_DOMAIN,
+        bbox: tuple[float, float, float, float] = NORTH_LATITUDE_20_DOMAIN_FILTER,
         product: str = "auto",
         resolution: str | float | None = None,
         eumdac_credentials_path: str | None = None,
         test: bool = False,
+        resample: bool = True,
+        aggregate_time: bool = True,
+        aggregation_window: str | None = "3h",
+        time_index: str = "granule",
     ) -> xr.Dataset:
         """
         Retrieve EUMETSAT data for specified dates and variables.
@@ -466,7 +576,20 @@ class EumetsatRetriever(BaseRetriever):
             Path to the file containing the EUMETSAT API token. Default is None.
         test : bool, optional
             If True, only the first 30 minutes of data per day will be downloaded for testing purposes.
-
+        resample : bool, optional
+            If True, resample products to the requested bbox/resolution grid when the reader supports it.
+            If False, keep the native swath/grid representation from the source files.
+        aggregate_time : bool, optional
+            If True, average datasets that share the same aggregation window. If False,
+            keep every downloaded granule.
+        aggregation_window : str, optional
+            Pandas frequency used to assign granules to centered analysis windows before
+            aggregation. The default "3h" corresponds to +/-90 minutes around
+            00, 03, 06, ..., 21 UTC analysis times.
+        time_index : {"granule", "scan"}, optional
+            If "granule", the time dimension indexes downloaded product files.
+            If "scan", supported raw swath readers use scanline observation time as
+            the time dimension.
         Returns
         -------
         xr.Dataset
@@ -487,6 +610,9 @@ class EumetsatRetriever(BaseRetriever):
         except ImportError as exc:
             raise ImportError("Requires eumdac, satpy, pyresample") from exc
 
+        if time_index not in {"granule", "scan"}:
+            raise ValueError("time_index must be either 'granule' or 'scan'")
+
         dates, _ = checktype(dates, variables)
         if product == "auto":
             product_names = list(EUMETSAT_SOURCES[source]["products"].keys())
@@ -496,14 +622,15 @@ class EumetsatRetriever(BaseRetriever):
             k: v for k, v in EUMETSAT_SOURCES[source].items() if k != "products"
         }
         resolution = resolution or EUMETSAT_SOURCES[source].get("native_res", None)
-        if resolution is None:
+        if resample and resolution is None:
             raise RuntimeError(
                 "No resolution specified and no consistent native_res known for this source."
             )
-        if isinstance(resolution, str) and resolution.endswith("km"):
-            res_km = float(resolution.replace("km", ""))
-        else:
-            res_km = float(resolution)
+        if resample:
+            if isinstance(resolution, str) and resolution.endswith("km"):
+                res_km = float(resolution.replace("km", ""))
+            else:
+                res_km = float(resolution)
         if eumdac_credentials_path is None:
             key = os.environ.get("EUMDAC_KEY")
             secret = os.environ.get("EUMDAC_SECRET")
@@ -530,21 +657,23 @@ class EumetsatRetriever(BaseRetriever):
 
         datastore = eumdac.DataStore(token)
         available_reader_names = set(available_readers())
-        width, height = get_nrows_ncols_from_domain_size_and_reskm(bbox, res_km)
-        area = AreaDefinition(
-            "bbox",
-            "bbox",
-            "epsg4326",
-            {"proj": "latlong"},
-            width,
-            height,
-            bbox,
-        )
+        area = None
+        if resample:
+            width, height = get_nrows_ncols_from_domain_size_and_reskm(bbox, res_km)
+            area = AreaDefinition(
+                "bbox",
+                "bbox",
+                "epsg4326",
+                {"proj": "latlong"},
+                width,
+                height,
+                bbox,
+            )
 
         def process_products(products):
             datasets = []
             format_suffixes = (
-                tuple(format) if isinstance(format, (list, tuple)) else (format,)
+                tuple(format) if isinstance(format, list | tuple) else (format,)
             )
 
             with TemporaryDirectory(
@@ -629,7 +758,8 @@ class EumetsatRetriever(BaseRetriever):
                                     module=r"geotiepoints\.geointerpolator",
                                 )
                                 scn.load(satpy_vars)
-                                scn = scn.resample(area, resampler="nearest")
+                                if resample:
+                                    scn = scn.resample(area, resampler="nearest")
                                 if reader.startswith("seviri"):
                                     ds = scn.to_xarray().persist()
                                 else:
@@ -637,10 +767,18 @@ class EumetsatRetriever(BaseRetriever):
                                     ds = ds.astype({v: np.float32 for v in ds.data_vars})
                             t = scn.start_time or extract_time_flex(Path(f).stem)
                         elif reader == "coda":
+                            if not resample:
+                                raise NotImplementedError(
+                                    "Raw IASI CODA retrieval is not implemented; use resample=True."
+                                )
                             ds, t = iasi_metop_to_xarray(
                                 f,
                                 area,
                             )
+                        elif reader == "atms_l1c_cdr_nc":
+                            ds, t = atms_l1c_cdr_to_xarray(f, satpy_vars)
+                        elif reader == "aws_mwr_l1b_nc":
+                            ds, t = aws_mwr_l1b_to_xarray(f, satpy_vars)
                         else:
                             # assumes it is in xarray compatible format
                             ds = xr.open_dataset(f)
@@ -651,15 +789,18 @@ class EumetsatRetriever(BaseRetriever):
                                     lon=(((ds.lon + 180) % 360) - 180)
                                 )
                             if reader == "xarray_ascat_winds":
-                                ds = regrid_swath_to_area(
-                                    ds,
-                                    area,
-                                )
+                                if resample:
+                                    ds = regrid_swath_to_area(
+                                        ds,
+                                        area,
+                                    )
                             t = extract_time_flex(Path(f).stem)
-                        if round_time:
-                            t = round_to_nearest_minutes(t, freq=round_time)
-                        ds = _sanitize_dataset_for_zarr(ds)
-                        ds = ds.expand_dims(time=[t])
+                        ds = _prepare_eumetsat_dataset_time(
+                            ds,
+                            t,
+                            reader=reader,
+                            time_index=time_index,
+                        )
                         if reader == "avhrr_l1b_eps":
                             ds = _materialize_dataset_single_threaded(ds)
                         datasets.append(ds)
@@ -694,25 +835,12 @@ class EumetsatRetriever(BaseRetriever):
                     f"No requested variables found in product {prod_name}, skipping."
                 )
                 continue
-            round_time = product_cfg.get("round_time", None)
-            round_time = int(round_time.replace("min", "")) if round_time else None
-            valid_times = product_cfg.get("valid_times", None)
+            select_by_overlap = product_cfg.get("select_by_overlap", False)
             collection = datastore.get_collection(collection_id)
             products_to_process = []
 
             for date in dates:
-                start_t = (
-                    pd.to_timedelta(valid_times.start)
-                    if isinstance(valid_times, slice)
-                    else pd.to_timedelta("00:00:00")
-                )
-                end_t = (
-                    pd.to_timedelta(valid_times.stop)
-                    if isinstance(valid_times, slice)
-                    else pd.to_timedelta("23:59:00")
-                )
-                start = (date + start_t).to_pydatetime()
-                end = (date + end_t).to_pydatetime()
+                start, end = _centered_time_window(date, aggregation_window)
                 if test:
                     end = start + datetime.timedelta(minutes=30)
 
@@ -721,21 +849,42 @@ class EumetsatRetriever(BaseRetriever):
                     continue
 
                 def ptime(p):
-                    t = getattr(p, "sensing_start", None) or getattr(
-                        p, "sensing_end", None
+                    sensing_window = extract_aws_sensing_window(str(p))
+                    t = (
+                        sensing_window[0]
+                        if sensing_window is not None
+                        else getattr(p, "sensing_start", None)
+                        or getattr(p, "sensing_end", None)
                     )
                     if t is None:
                         return None
-                    if round_time is not None and round_time < 30:
-                        # otherwise too long
-                        t = round_to_nearest_minutes(t, freq=round_time)
                     return t
+
+                def poverlaps(p):
+                    sensing_window = extract_aws_sensing_window(str(p))
+                    if sensing_window is None:
+                        sensing_start = getattr(p, "sensing_start", None)
+                        sensing_end = getattr(p, "sensing_end", None)
+                    else:
+                        sensing_start, sensing_end = sensing_window
+                    if sensing_start is None and sensing_end is None:
+                        return True
+                    sensing_start = sensing_start or sensing_end
+                    sensing_end = sensing_end or sensing_start
+                    if sensing_start < start - datetime.timedelta(days=1):
+                        return False
+                    return sensing_start <= end and sensing_end >= start
 
                 products.sort(key=lambda p: (ptime(p) or datetime.datetime.max, str(p)))
                 chosen = {}
                 for p in products:
                     t = ptime(p)
-                    if t is None or t < start or t > end:
+                    if t is None:
+                        continue
+                    if select_by_overlap:
+                        if not poverlaps(p):
+                            continue
+                    elif t < start or t > end:
                         continue
                     chosen.setdefault(t, p)
                 products = list(chosen.values())
@@ -751,15 +900,18 @@ class EumetsatRetriever(BaseRetriever):
             if products_to_process:
                 ds_list = process_products(products_to_process)
                 if ds_list:
-                    all_ds.append(xr.concat(ds_list, dim="time"))
+                    all_ds.append(xr.concat(ds_list, dim="time", join="outer"))
 
             if not all_ds:
                 return xr.Dataset()
 
         ds = xr.concat(all_ds, dim="time").sortby("time")
-        for t in ds.time.values:
-            plot_polar(ds, t=t, var=satpy_vars[0])
-        ds = ds.assign_attrs(metadata).groupby("time").mean(skipna=True)
+        ds = ds.assign_attrs(metadata)
+        if aggregate_time:
+            ds = ds.assign_coords(
+                time=_time_window_centers(ds["time"].values, aggregation_window)
+            )
+            ds = ds.groupby("time").mean(skipna=True).sel(time=dates)
         ds["time"] = pd.to_datetime(ds["time"].values).tz_localize(None)
         ds = _sanitize_dataset_for_zarr(ds)
         return ds
@@ -810,6 +962,130 @@ def regrid_swath_to_area(
         attrs=dict(ds.attrs),
     )
     return ds_out
+
+
+def aws_mwr_l1b_to_xarray(
+    nc_file: str,
+    channels: list[str],
+) -> tuple[xr.Dataset, datetime.datetime]:
+    """
+    Read AWS MWR L1B grouped NetCDF and expose requested channels as variables.
+    """
+    selected_channels = sorted(int(channel) for channel in channels if channel.isdigit())
+    channel_indices = [channel - 1 for channel in selected_channels]
+    calibration = xr.open_dataset(nc_file, group="/data/calibration")
+    navigation = xr.open_dataset(nc_file, group="/data/navigation")
+    measurement = xr.open_dataset(nc_file, group="/data/measurement")
+
+    brightness_temperature = calibration["aws_toa_brightness_temperature"].isel(
+        n_channels=channel_indices
+    )
+    brightness_temperature = brightness_temperature.rename(
+        {"n_scans": "scan", "n_fovs": "fov", "n_channels": "channel"}
+    )
+    brightness_temperature = brightness_temperature.assign_coords(
+        channel=selected_channels
+    )
+
+    def geo(name: str) -> xr.DataArray:
+        return navigation[name].isel(n_geo_groups=0).rename(
+            {"n_scans": "scan", "n_fovs": "fov"}
+        )
+
+    data_vars = {
+        str(channel): brightness_temperature.sel(channel=channel).drop_vars("channel")
+        for channel in selected_channels
+    }
+    data_vars.update(
+        {
+            "scan_number": ("scan", measurement["aws_scan_number"].values),
+            "latitude": geo("aws_lat"),
+            "longitude": geo("aws_lon"),
+            "satellite_zenith_angle": geo("aws_satellite_zenith_angle"),
+            "satellite_azimuth_angle": geo("aws_satellite_azimuth_angle"),
+            "solar_zenith_angle": geo("aws_solar_zenith_angle"),
+            "solar_azimuth_angle": geo("aws_solar_azimuth_angle"),
+            "surface_type": geo("aws_surface_type"),
+            "scan_time": ("scan", navigation["time_startscan_utc_earthview"].values),
+        }
+    )
+    ds = xr.Dataset(data_vars)
+    ds = ds.assign_coords(
+        scan=np.arange(brightness_temperature.sizes["scan"]),
+        fov=np.arange(brightness_temperature.sizes["fov"]),
+    )
+    ds = _stack_dims_to_cell(ds, ("scan", "fov"))
+    for channel in selected_channels:
+        ds[str(channel)].attrs.update(
+            {
+                "units": "K",
+                "long_name": f"AWS MWR channel {channel} brightness temperature",
+            }
+        )
+
+    t = extract_aws_sensing_start(Path(nc_file).stem) or extract_time_flex(
+        Path(nc_file).stem
+    )
+    if t is None:
+        t = pd.to_datetime(navigation["time_startscan_utc_earthview"].values[0])
+        t = t.to_pydatetime()
+    return ds, t.replace(tzinfo=None)
+
+
+def atms_l1c_cdr_to_xarray(
+    nc_file: str,
+    channels: list[str],
+) -> tuple[xr.Dataset, datetime.datetime]:
+    """
+    Read EUMETSAT ATMS L1C CDR NetCDF and expose requested channels as variables.
+    """
+    selected_channels = sorted(int(channel) for channel in channels if channel.isdigit())
+    ds_in = xr.open_dataset(nc_file)
+    brightness_temperature = ds_in["btemps"].sel(channel=selected_channels)
+    data_vars = {
+        str(channel): brightness_temperature.sel(channel=channel).drop_vars("channel")
+        for channel in selected_channels
+    }
+
+    metadata_vars = [
+        "latitude",
+        "longitude",
+        "satellite_zenith_angle",
+        "satellite_azimuth_angle",
+        "solar_zenith_angle",
+        "solar_azimuth_angle",
+        "quality_pixel_bitmask",
+        "data_quality_bitmask",
+    ]
+    for var_name in metadata_vars:
+        if var_name in ds_in:
+            data_vars[var_name] = ds_in[var_name]
+        elif var_name in ds_in.coords:
+            data_vars[var_name] = ds_in.coords[var_name].reset_coords(drop=True)
+    if "time" in ds_in:
+        data_vars["scan_time"] = ds_in["time"]
+
+    ds = xr.Dataset(data_vars, attrs=ds_in.attrs)
+    coords_to_keep_as_variables = [
+        name for name in ("latitude", "longitude") if name in ds.coords
+    ]
+    if coords_to_keep_as_variables:
+        ds = ds.reset_coords(coords_to_keep_as_variables, drop=False)
+    ds = _stack_dims_to_cell(ds, ("y", "x"))
+    for channel in selected_channels:
+        ds[str(channel)].attrs.update(
+            {
+                "units": ds_in["btemps"].attrs.get("units", "K"),
+                "long_name": f"ATMS channel {channel} brightness temperature",
+            }
+        )
+
+    t = pd.to_datetime(
+        ds_in.attrs.get("temporal_coverage_start")
+        or ds_in.attrs.get("time_coverage_start")
+        or extract_time_flex(Path(nc_file).stem)
+    ).to_pydatetime()
+    return ds, t.replace(tzinfo=None)
 
 
 def iasi_metop_to_xarray(
@@ -895,12 +1171,31 @@ def iasi_metop_to_xarray(
     return ds, times.replace(tzinfo=None)
 
 
-def plot_polar(ds, t, var):
+def _format_half_window(window: str | None) -> str | None:
+    if window is None:
+        return None
+    half_window = pd.to_timedelta(window) / 2
+    minutes = int(half_window / pd.Timedelta(minutes=1))
+    if minutes % 60 == 0:
+        return f"{minutes // 60}h"
+    return f"{minutes}min"
+
+
+def plot_polar(
+    ds,
+    t,
+    var,
+    title: str | None = None,
+    aggregation_window: str | None = None,
+):
     import cartopy.crs as ccrs
     import matplotlib.pyplot as plt
     import matplotlib.ticker as mticker
     from pyproj import Transformer
 
+    t = pd.to_datetime(t)
+    if "time" in ds.dims or "time" in ds.coords:
+        ds = ds.sel(time=t)
     if "longitude" in ds and "latitude" in ds:
         lon = ds["longitude"].values.ravel()
         lat = ds["latitude"].values.ravel()
@@ -910,12 +1205,25 @@ def plot_polar(ds, t, var):
         lat = lat2d.ravel()
     else:
         raise KeyError("Dataset must contain either longitude/latitude or x/y coordinates.")
-    val = ds.sel(time=t)[var].values.ravel()
+    val = ds[var].values.ravel()
+    valid = np.isfinite(lon) & np.isfinite(lat) & np.isfinite(val)
+    lon = lon[valid]
+    lat = lat[valid]
+    val = val[valid]
     # Project lon/lat -> polar stereographic meters
     central_lon = 15
-    proj = ccrs.NorthPolarStereo(central_longitude=central_lon)
+    if np.nanmedian(lat) < 0:
+        proj = ccrs.SouthPolarStereo(central_longitude=central_lon)
+        latitude_locator = np.arange(-90, -49, 10)
+    else:
+        proj = ccrs.NorthPolarStereo(central_longitude=central_lon)
+        latitude_locator = np.arange(50, 91, 10)
     transformer = Transformer.from_crs("EPSG:4326", proj.proj4_init, always_xy=True)
     x, y = transformer.transform(lon, lat)
+    valid = np.isfinite(x) & np.isfinite(y) & np.isfinite(val)
+    x = x[valid]
+    y = y[valid]
+    val = val[valid]
     xmin, xmax = x.min(), x.max()
     ymin, ymax = y.min(), y.max()
     dx = (xmax - xmin) * 0.05  # 5% buffer
@@ -931,13 +1239,18 @@ def plot_polar(ds, t, var):
         linestyle="--",
     )
     gl.xlocator = mticker.FixedLocator(np.arange(-180, 181, 30))  # meridians
-    gl.ylocator = mticker.FixedLocator(np.arange(60, 91, 10))
+    gl.ylocator = mticker.FixedLocator(latitude_locator)
     ax.coastlines(linewidth=0.8)
     # ax.set_extent([xmin, xmax, ymin, ymax], crs=proj)
     ax.set_extent([xmin - dx, xmax + dx, ymin - dy, ymax + dy], crs=proj)
     pm = ax.scatter(x, y, c=val, transform=proj, cmap="viridis", s=10)
     plt.colorbar(pm, ax=ax, shrink=0.7)
-    plt.title("Gridded polar stereographic")
+    plot_title = title or ds[var].attrs.get("long_name") or str(var)
+    time_label = f"{pd.to_datetime(t):%Y-%m-%d %H:%M}"
+    half_window = _format_half_window(aggregation_window)
+    if half_window is not None:
+        time_label = f"{time_label} +/-{half_window}"
+    plt.title(f"{plot_title} ({time_label})")
     fig.tight_layout(pad=0.3)
     plt.savefig(
         f"{var}_{pd.to_datetime(t).strftime('%Y%m%d_%H%M%S')}.png",

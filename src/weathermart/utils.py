@@ -17,7 +17,8 @@ SWISS_EPSG = "epsg:2056"
 EARTH_CIRCUMFERENCE_KM = 40075
 KM_PER_DEGREE = EARTH_CIRCUMFERENCE_KM / 360.0
 EARTH_RADIUS_KM = EARTH_CIRCUMFERENCE_KM / 2 * np.pi
-
+NORTH_LATITUDE_20_DOMAIN_FILTER = "lat > 20"
+POLAR_DOMAIN_FILTER = NORTH_LATITUDE_20_DOMAIN_FILTER
 
 def get_nrows_ncols_from_domain_size_and_reskm(
     domain: tuple[float, float, float, float],

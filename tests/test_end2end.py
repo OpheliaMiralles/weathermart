@@ -50,7 +50,7 @@ def test_provider() -> DataProvider:
     "source",
     [
         "surface",
-        "satellite-eumetsat",
+        "eumetsat-seviri",
         "opera",
         "kenda-ch1-before-filename-change",
         "kenda-ch1-after-filename-change",

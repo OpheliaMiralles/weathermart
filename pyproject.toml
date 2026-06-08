@@ -22,6 +22,8 @@ dependencies = [
     "zarr>=2.18.3",
     "yrprod",
     "python-geotiepoints>=1.8.0",
+    "ecmwf-api-client>=1.6.5",
+    "pyodc>=1.6.0",
 ]
 
 [project.optional-dependencies]
@@ -48,6 +50,7 @@ NetAtmoRetriever = "weathermart.retrievers:NetAtmoRetriever"
 TitanRetriever = "weathermart.retrievers:TitanRetriever"
 NordicRadarRetriever = "weathermart.retrievers:NordicRadarRetriever"
 FrostRetriever = "weathermart.retrievers:FrostRetriever"
+MarsODBRetriever = "weathermart.retrievers:MarsODBRetriever"
 
 [dependency-groups]
 dev = [

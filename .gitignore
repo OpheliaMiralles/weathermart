@@ -8,8 +8,6 @@ wheels/
 .vscode
 *.pytest*
 *py.typed
-*cache
-.vscode
 
 
 # Virtual environments
@@ -20,15 +18,27 @@ uv.lock
 # credentials
 *credentials.json
 *token.json
+.ecmwfapirc
 
 #jobs
 run*.sh
+!run_month.sh
+!run_month_eumetsat_aws.sh
 submit*.sh
+!submit_all.sh
+!submit_all_eumetsat_aws.sh
 logs
 *.csv
 
 #examples
+examples
+!docs/examples/
+!docs/examples/**
 *.png
 *_bris.py
 plots
-*.csv
+mars*
+!mars_all.py
+*.inp
+*.odb
+*.zarr

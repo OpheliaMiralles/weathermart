@@ -6,4 +6,6 @@ Examples
 
    examples/nwp
    examples/radar
-   examples/satellite
+   examples/lightning
+   examples/mars_odb
+   examples/eumetsat

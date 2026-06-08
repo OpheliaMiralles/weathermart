@@ -3282,11 +3282,13 @@ name = "weathermart"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "ecmwf-api-client" },
     { name = "geopandas" },
     { name = "httpx" },
     { name = "numpy" },
     { name = "omegaconf" },
     { name = "pandas" },
+    { name = "pyodc" },
     { name = "python-geotiepoints" },
     { name = "wradlib" },
     { name = "xarray" },
@@ -3327,6 +3329,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "earthkit", marker = "extra == 'grib'", specifier = ">=0.6.0" },
+    { name = "ecmwf-api-client", specifier = ">=1.6.5" },
     { name = "eumdac", marker = "extra == 'eumetsat'" },
     { name = "geopandas", specifier = ">=1.0.1" },
     { name = "httpx", specifier = ">=0.28.1" },
@@ -3335,6 +3338,7 @@ requires-dist = [
     { name = "omegaconf", specifier = ">=2.3.0" },
     { name = "pandas", specifier = ">=2.3.2" },
     { name = "planetary-computer", marker = "extra == 'dem'" },
+    { name = "pyodc", specifier = ">=1.6.0" },
     { name = "pyresample", marker = "extra == 'eumetsat'" },
     { name = "pystac-client", marker = "extra == 'dem'" },
     { name = "python-geotiepoints", specifier = ">=1.8.0" },

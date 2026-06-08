@@ -3,10 +3,11 @@ surface:
   variables: rre150z0
   dates: 2025-05-06
   use_limitation: 20
-satellite-eumetsat:
-  source: satellite
+eumetsat-seviri:
+  source: MSG_SEVIRI
   variables: VIS006
-  dates: 2023-12-03
+  dates: 2023-12-03T12:00:00
+  aggregation_window: 3h
   test: True
 opera:
   source: opera
