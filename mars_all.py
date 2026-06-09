@@ -31,12 +31,34 @@ AGGREGATION_WINDOW = "3h"
 STORAGE_KEY = "mars_all_radiances_v2"
 
 
-def _env_timestamp(name: str, default: str | datetime.datetime, *, end: bool) -> pd.Timestamp:
+def _env_timestamp(
+    name: str, default: str | datetime.datetime, *, end: bool
+) -> pd.Timestamp:
     raw_value = os.environ.get(name)
     timestamp = pd.Timestamp(raw_value or default).tz_localize(None)
     if end and raw_value is not None and len(raw_value) == 10:
         timestamp = timestamp + pd.Timedelta(hours=23, minutes=59, seconds=59)
     return timestamp
+
+
+def _env_optional_float(name: str, default: float | None = None) -> float | None:
+    raw_value = os.environ.get(name)
+    if raw_value is None:
+        return default
+    normalized = raw_value.strip().lower()
+    if normalized in {"", "0", "none", "null", "false", "off"}:
+        return None
+    return float(raw_value)
+
+
+def _env_optional_int(name: str, default: int | None = None) -> int | None:
+    raw_value = os.environ.get(name)
+    if raw_value is None:
+        return default
+    normalized = raw_value.strip().lower()
+    if normalized in {"", "0", "none", "null", "false", "off"}:
+        return None
+    return int(raw_value)
 
 
 DEFAULT_START_TIME = _env_timestamp("MARS_START_DATE", "1979-01-01", end=False)
@@ -70,8 +92,7 @@ def retrieve_month(year: int, month: int) -> None:
     provider = default_provider()
     days = month_days(year, month)
     print(
-        f"[INFO] retrieving MARS radiances for {year}-{month:02d}, "
-        f"{len(days)} days",
+        f"[INFO] retrieving MARS radiances for {year}-{month:02d}, {len(days)} days",
         flush=True,
     )
     if not days:
@@ -86,7 +107,10 @@ def retrieve_month(year: int, month: int) -> None:
     )
     output_root.mkdir(parents=True, exist_ok=True)
     mars_executable = os.environ.get("MARS_EXECUTABLE", "mars")
-    mars_timeout = float(os.environ.get("MARS_TIMEOUT", "900"))
+    mars_timeout = _env_optional_float("MARS_TIMEOUT")
+    mars_max_queued_requests = _env_optional_int("MARS_MAX_QUEUED_REQUESTS", 19)
+    mars_queue_poll_seconds = _env_optional_float("MARS_QUEUE_POLL_SECONDS", 300) or 300
+    mars_queue_wait_timeout = _env_optional_float("MARS_QUEUE_WAIT_TIMEOUT")
     domain_filter = os.environ.get(
         "MARS_DOMAIN_FILTER",
         NORTH_LATITUDE_20_DOMAIN_FILTER,
@@ -109,6 +133,9 @@ def retrieve_month(year: int, month: int) -> None:
                 submit=True,
                 mars_executable=mars_executable,
                 mars_timeout=mars_timeout,
+                mars_max_queued_requests=mars_max_queued_requests,
+                mars_queue_poll_seconds=mars_queue_poll_seconds,
+                mars_queue_wait_timeout=mars_queue_wait_timeout,
                 domain_filter=domain_filter,
                 odb_columns=MINIMAL_RADIANCE_ODB_COLUMNS,
                 aggregation_window=AGGREGATION_WINDOW,

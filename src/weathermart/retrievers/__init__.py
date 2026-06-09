@@ -5,6 +5,7 @@ from weathermart.retrievers.fdb import FDBRetriever as FDBRetriever
 from weathermart.retrievers.frost import FrostRetriever as FrostRetriever
 from weathermart.retrievers.grib import GribRetriever as GribRetriever
 from weathermart.retrievers.netatmo import NetAtmoRetriever as NetAtmoRetriever
+from weathermart.retrievers.mars import MarsRetriever as MarsRetriever
 from weathermart.retrievers.mars import MarsODBRetriever as MarsODBRetriever
 from weathermart.retrievers.radar import NordicRadarRetriever as NordicRadarRetriever
 from weathermart.retrievers.radar import OperaRetriever as OperaRetriever

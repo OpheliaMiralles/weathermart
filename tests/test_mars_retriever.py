@@ -154,7 +154,10 @@ def test_mars_retriever_uses_default_reportypes_for_instrument(tmp_path: Path) -
 
     request_file = Path(ds["request_file"].isel(request=0).item())
     request_text = request_file.read_text(encoding="utf-8")
-    assert "REPORTYPE=21001/21002/21003/21004/21005/21007/21008/21009/21010" in request_text
+    assert (
+        "REPORTYPE=21001/21002/21003/21004/21005/21007/21008/21009/21010"
+        in request_text
+    )
     assert "where (lat > 20)" in request_text
     assert "vertco_reference_1 >=" not in request_text
     assert "lsm < 0.2" not in request_text
@@ -210,6 +213,53 @@ def test_mars_retriever_passes_rc_credential_path(tmp_path: Path, monkeypatch) -
     assert check is True
     assert timeout is None
     assert env["ECMWF_API_RC_FILE"] == str(rc_file)
+
+
+def test_mars_retriever_waits_for_ecmwf_queue_slot(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    run_calls = []
+    sleeps = []
+    queue_counts = iter([{"queued": 20, "active": 1}, {"queued": 18, "active": 1}])
+
+    def fake_counts(rc_credential_path):
+        assert rc_credential_path == tmp_path / ".ecmwfapirc"
+        return next(queue_counts)
+
+    def fake_sleep(seconds):
+        sleeps.append(seconds)
+
+    def fake_run(cmd, check, env, timeout):
+        run_calls.append((cmd, check, env, timeout))
+
+    rc_file = tmp_path / ".ecmwfapirc"
+    rc_file.write_text('{"url":"https://api.ecmwf.int/v1","key":"x","email":"x@y"}')
+
+    monkeypatch.setattr(
+        "weathermart.retrievers.mars._mars_request_status_counts",
+        fake_counts,
+    )
+    monkeypatch.setattr("weathermart.retrievers.mars.time.sleep", fake_sleep)
+    monkeypatch.setattr("weathermart.retrievers.mars.subprocess.run", fake_run)
+
+    retriever = MarsODBRetriever()
+    retriever.retrieve(
+        source="MARS_ODB",
+        variables=["AMSU-A"],
+        dates=["2020-01-01"],
+        output_dir=tmp_path,
+        reportypes=["21009"],
+        submit=True,
+        mars_executable="/tmp/mars",
+        rc_credential_path=rc_file,
+        mars_max_queued_requests=20,
+        mars_queue_poll_seconds=5,
+        read_odb=False,
+    )
+
+    assert sleeps == [5]
+    assert len(run_calls) == 1
 
 
 def test_odb_dataframe_to_xarray_uses_time_and_cell_dims() -> None:

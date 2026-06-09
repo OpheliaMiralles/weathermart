@@ -37,8 +37,8 @@ examples
 *.png
 *_bris.py
 plots
-mars*
-!mars_all.py
+mars_requests*
+mars_all*
 *.inp
 *.odb
 *.zarr

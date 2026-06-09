@@ -7,6 +7,22 @@
 #$ -o /home/opmir9231/weathermart/logs
 date
 echo "Starting MARS radiance retrieval for month $YEAR-$MONTH"
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+
+cleanup_mars_requests() {
+  status=${1:-$?}
+  trap - INT TERM HUP EXIT
+  if [ "$status" -ne 0 ] && [ "${CANCEL_ECMWF_ON_EXIT:-1}" = "1" ]; then
+    echo "MARS month job interrupted; cleaning up ECMWF MARS requests"
+    python "$SCRIPT_DIR/scripts/cancel_ecmwf_mars_requests.py" queued active submitted || true
+  fi
+  exit "$status"
+}
+
+trap 'cleanup_mars_requests 130' INT
+trap 'cleanup_mars_requests 143' TERM
+trap 'cleanup_mars_requests 129' HUP
+trap 'cleanup_mars_requests $?' EXIT
 
 source ~/.bashrc
 cd /home/opmir9231/weathermart/
