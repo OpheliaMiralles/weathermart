@@ -9,7 +9,11 @@ wheels/
 *.pytest*
 *py.typed
 
-
+.codex
+.agents
+.ruff-cache
+.uv-cache
+.vscode
 # Virtual environments
 .venv
 uv.lock
