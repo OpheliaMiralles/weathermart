@@ -9,11 +9,7 @@ wheels/
 *.pytest*
 *py.typed
 
-.codex
-.agents
-.uv-cache
-.vscode
-.ruff_cache
+
 # Virtual environments
 .venv
 uv.lock
@@ -41,3 +37,9 @@ mars_requests*
 *.inp
 *.odb
 *.zarr
+mars_all.py
+.vscode
+.agents
+.codex
+.ruff_cache
+.uv-cache

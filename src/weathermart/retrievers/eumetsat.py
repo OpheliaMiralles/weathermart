@@ -21,8 +21,9 @@ import xarray as xr
 
 from weathermart.base import BaseRetriever
 from weathermart.base import checktype
-from weathermart.utils import get_nrows_ncols_from_domain_size_and_reskm
+from weathermart.utils import NORTH_LATITUDE_20_BBOX
 from weathermart.utils import NORTH_LATITUDE_20_DOMAIN_FILTER
+from weathermart.utils import get_nrows_ncols_from_domain_size_and_reskm
 
 max_workers = min(os.cpu_count() or 4, 8)
 logger = logging.getLogger(__name__)
@@ -34,6 +35,22 @@ RADIANCE_METADATA_VARIABLES = [
     "solar_zenith_angle",
     "solar_azimuth_angle",
 ]
+
+RADIANCE_READER_INSTRUMENTS = {
+    "atms_l1c_cdr_nc": "ATMS",
+    "aws_mwr_l1b_nc": "AWS",
+    "coda": "IASI",
+    "mhs_l1c_aapp": "MHS",
+}
+RADIANCE_INSTRUMENT_IDS = {
+    "AMSU-A": 1,
+    "MHS": 2,
+    "ATMS": 3,
+    "MWHS-2": 4,
+    "AWS": 5,
+    "IASI": 6,
+}
+IASI_SPECTRAL_CHANNELS = [str(channel) for channel in range(1, 8462)]
 EUMETSAT_SOURCES = {
     "MSG_SEVIRI": {
         "platform": "MSG (SEVIRI)",
@@ -120,7 +137,7 @@ EUMETSAT_SOURCES = {
             },
             "iasi_radiances": {
                 "code": "EO:EUM:DAT:METOP:IASIL1C-ALL",
-                "variables": ["temp_15um", "swir_36um"],
+                "variables": [*IASI_SPECTRAL_CHANNELS],
                 "native_res": "12km",
                 "reader": "coda",
                 "format": ".nat",
@@ -180,7 +197,9 @@ EUMETSAT_SOURCES = {
                 "reader": "atms_l1c_cdr_nc",
                 "format": ".nc",
                 "select_by_overlap": True,
-                "description": ("ATMS Level 1C CDR MW radiances. 22 spectral channels."),
+                "description": (
+                    "ATMS Level 1C CDR MW radiances. 22 spectral channels."
+                ),
             },
             "mhs_radiances": {
                 "code": "EO:EUM:DAT:METOP:MHSL1",
@@ -507,9 +526,7 @@ def _stack_radiance_channels_as_observations(
 
     first = ds[channel_vars[0]]
     sample_dims = tuple(first.dims)
-    incompatible = [
-        name for name in channel_vars if tuple(ds[name].dims) != sample_dims
-    ]
+    incompatible = [name for name in channel_vars if tuple(ds[name].dims) != sample_dims]
     if incompatible:
         logger.warning(
             "Cannot stack radiance channels for %s because channel variables have "
@@ -525,9 +542,9 @@ def _stack_radiance_channels_as_observations(
         [ds[name].astype(np.float32) for name in channel_vars],
         dim=channel_axis,
     )
-    reference_dims = tuple(
-        dim for dim in sample_dims if dim in stacked_channels.dims
-    ) + ("_radiance_channel",)
+    reference_dims = tuple(dim for dim in sample_dims if dim in stacked_channels.dims) + (
+        "_radiance_channel",
+    )
     stacked_channels = stacked_channels.transpose(*reference_dims)
     brightness_temperature = _flatten_non_time_dims_to_cell(stacked_channels)
 
@@ -559,9 +576,7 @@ def _stack_radiance_channels_as_observations(
         # Build a template with the same sample dimensions as the radiance array,
         # filled with the instrument-local channel number, then flatten it with
         # the identical helper used for the radiance values.
-        template = xr.zeros_like(stacked_channels, dtype=np.int32) + stacked_channels[
-            "_radiance_channel"
-        ].astype(np.int32)
+        template = xr.zeros_like(stacked_channels, dtype=np.int32) + stacked_channels["_radiance_channel"].astype(np.int32)
         channel = _flatten_non_time_dims_to_cell(template)
     out["channel"] = channel.reset_coords(drop=True)
     out["channel"].attrs.update(
@@ -570,9 +585,7 @@ def _stack_radiance_channels_as_observations(
             "description": "Instrument-local channel index; combine with instrument_id to disambiguate.",
         }
     )
-    out["instrument_id"] = xr.full_like(
-        out["channel"], RADIANCE_INSTRUMENT_IDS.get(instrument, -1)
-    )
+    out["instrument_id"] = xr.full_like(out["channel"], RADIANCE_INSTRUMENT_IDS.get(instrument, -1))
     out["instrument_id"].attrs.update(
         {
             "long_name": "radiance instrument identifier",
@@ -598,11 +611,7 @@ def _stack_radiance_channels_as_observations(
             reference_dims=metadata_dims,
             channel_values=channel_values,
         )
-        if (
-            stacked is not None
-            and "cell" in stacked.dims
-            and stacked.sizes["cell"] == out.sizes["cell"]
-        ):
+        if stacked is not None and "cell" in stacked.dims and stacked.sizes["cell"] == out.sizes["cell"]:
             out[name] = stacked.reset_coords(drop=True)
             out[name].attrs.update(da.attrs)
 
@@ -707,7 +716,10 @@ def _sanitize_dataset_for_zarr(ds: xr.Dataset) -> xr.Dataset:
 
 
 def _materialize_dataset_single_threaded(ds: xr.Dataset) -> xr.Dataset:
-    if any(getattr(ds[var_name].data, "chunks", None) is not None for var_name in ds.data_vars):
+    if any(
+        getattr(ds[var_name].data, "chunks", None) is not None
+        for var_name in ds.data_vars
+    ):
         with warnings.catch_warnings():
             warnings.filterwarnings(
                 "ignore",
@@ -772,7 +784,7 @@ class EumetsatRetriever(BaseRetriever):
         variables: list[str] | str,
         dates: datetime.date | str | pd.Timestamp | list[Any],
         *,
-        bbox: tuple[float, float, float, float] = NORTH_LATITUDE_20_DOMAIN_FILTER,
+        bbox: tuple[float, float, float, float] | str = NORTH_LATITUDE_20_BBOX,
         product: str = "auto",
         resolution: str | float | None = None,
         eumdac_credentials_path: str | None = None,
@@ -836,6 +848,9 @@ class EumetsatRetriever(BaseRetriever):
             from satpy.scene import Scene
         except ImportError as exc:
             raise ImportError("Requires eumdac, satpy, pyresample") from exc
+
+        if bbox == NORTH_LATITUDE_20_DOMAIN_FILTER:
+            bbox = NORTH_LATITUDE_20_BBOX
 
         if time_index not in {"granule", "scan"}:
             raise ValueError("time_index must be either 'granule' or 'scan'")
@@ -951,7 +966,8 @@ class EumetsatRetriever(BaseRetriever):
                             selected = {
                                 source_name: target_name
                                 for source_name, target_name in rename_map.items()
-                                if target_name in satpy_vars and source_name in ds.data_vars
+                                if target_name in satpy_vars
+                                and source_name in ds.data_vars
                             }
                             if not selected:
                                 raise KeyError(
@@ -991,16 +1007,16 @@ class EumetsatRetriever(BaseRetriever):
                                     ds = scn.to_xarray().persist()
                                 else:
                                     ds = scn.to_xarray_dataset()
-                                    ds = ds.astype({v: np.float32 for v in ds.data_vars})
+                                    ds = ds.astype(
+                                        {v: np.float32 for v in ds.data_vars}
+                                    )
                             t = scn.start_time or extract_time_flex(Path(f).stem)
                         elif reader == "coda":
-                            if not resample:
-                                raise NotImplementedError(
-                                    "Raw IASI CODA retrieval is not implemented; use resample=True."
-                                )
                             ds, t = iasi_metop_to_xarray(
                                 f,
                                 area,
+                                satpy_vars,
+                                bbox=None if resample else bbox,
                             )
                         elif reader == "atms_l1c_cdr_nc":
                             ds, t = atms_l1c_cdr_to_xarray(f, satpy_vars)
@@ -1025,9 +1041,7 @@ class EumetsatRetriever(BaseRetriever):
                         instrument = RADIANCE_READER_INSTRUMENTS.get(reader)
                         if instrument is not None:
                             radiance_output_name = (
-                                "spectral_radiance"
-                                if instrument == "IASI"
-                                else "brightness_temperature"
+                                "spectral_radiance" if instrument == "IASI" else "brightness_temperature"
                             )
                             ds = _stack_radiance_channels_as_observations(
                                 ds,
@@ -1066,9 +1080,7 @@ class EumetsatRetriever(BaseRetriever):
                     + str(available_readers())
                 )
             satpy_vars = list(
-                set(product_cfg["variables"]).intersection(
-                    set(variables)
-                )
+                set(product_cfg["variables"]).intersection(set(variables))
             )
             if len(satpy_vars) == 0:
                 logger.info(
@@ -1148,15 +1160,14 @@ class EumetsatRetriever(BaseRetriever):
         ds = xr.concat(all_ds, dim="time").sortby("time")
         ds = ds.assign_attrs(metadata)
         if aggregate_time:
+            print(ds.time.values)
             ds = ds.assign_coords(
                 time=_time_window_centers(ds["time"].values, aggregation_window)
             )
             if ds.attrs.get("radiance_layout") == "mars_odb_like" and "cell" in ds.dims:
                 ds = _concat_cell_observations_by_time(ds).sel(time=dates)
             else:
-                ds = ds.groupby("time").mean(
-                    skipna=True
-                )  # .sel(time=dates, method="nearest")
+                ds = ds.groupby("time").mean(skipna=True)#.sel(time=dates, method="nearest")
                 print(ds.time.values)
         ds["time"] = pd.to_datetime(ds["time"].values).tz_localize(None)
         ds = _sanitize_dataset_for_zarr(ds)
@@ -1217,7 +1228,9 @@ def aws_mwr_l1b_to_xarray(
     """
     Read AWS MWR L1B grouped NetCDF and expose requested channels as variables.
     """
-    selected_channels = sorted(int(channel) for channel in channels if channel.isdigit())
+    selected_channels = sorted(
+        int(channel) for channel in channels if channel.isdigit()
+    )
     channel_indices = [channel - 1 for channel in selected_channels]
     calibration = xr.open_dataset(nc_file, group="/data/calibration")
     navigation = xr.open_dataset(nc_file, group="/data/navigation")
@@ -1234,8 +1247,10 @@ def aws_mwr_l1b_to_xarray(
     )
 
     def geo(name: str) -> xr.DataArray:
-        return navigation[name].isel(n_geo_groups=0).rename(
-            {"n_scans": "scan", "n_fovs": "fov"}
+        return (
+            navigation[name]
+            .isel(n_geo_groups=0)
+            .rename({"n_scans": "scan", "n_fovs": "fov"})
         )
 
     data_vars = {
@@ -1285,7 +1300,9 @@ def atms_l1c_cdr_to_xarray(
     """
     Read EUMETSAT ATMS L1C CDR NetCDF and expose requested channels as variables.
     """
-    selected_channels = sorted(int(channel) for channel in channels if channel.isdigit())
+    selected_channels = sorted(
+        int(channel) for channel in channels if channel.isdigit()
+    )
     ds_in = xr.open_dataset(nc_file)
     brightness_temperature = ds_in["btemps"].sel(channel=selected_channels)
     data_vars = {
@@ -1337,81 +1354,157 @@ def atms_l1c_cdr_to_xarray(
 def iasi_metop_to_xarray(
     eps_file: str,
     area,
+    variables: list[str] | None = None,
+    bbox: tuple[float, float, float, float] | None = None,
     radius_of_influence: float = 30_000.0,
 ) -> tuple[xr.Dataset, datetime.datetime]:
     """
-    Read IASI L1C EPS, select physically meaningful spectral bands,
-    and regrid to a target AREA.
+    Read IASI L1C EPS, select requested spectral channels,
+    and optionally regrid to a target area.
     """
     import coda
-
     coda_file = coda.open(eps_file)
     lats = []
     lons = []
-    n_mdr = len(coda.fetch(f, "/MDR"))
-    n_chan = 8700
+    scan_times = []
+    n_mdr = len(coda.fetch(coda_file, "/MDR"))
+    if n_mdr == 0:
+        raise ValueError(f"No MDR records found in {eps_file}")
+    first_spectrum = np.asarray(coda.fetch(coda_file, "/MDR[0]/MDR/GS1cSpect"))
+    n_chan = first_spectrum.shape[-1]
     wn_start = 645.0
     wn_step = 0.25
     wn = wn_start + np.arange(n_chan) * wn_step
-    t_eps = np.median(np.asarray(coda.fetch(f, "/MDR[0]/MDR/OnboardUTC")))
+    t_eps = np.median(np.asarray(coda.fetch(coda_file, "/MDR[0]/MDR/OnboardUTC")))
     epoch = datetime.datetime(2000, 1, 1, tzinfo=datetime.UTC)
     times = epoch + datetime.timedelta(seconds=t_eps)
-    IASI_BANDS = {
-        "temp_15um": (650, 770),  # ≈ 13–15.5 µm
-        "swir_36um": (2500, 2760),  # ≈ 3.6–4.0 µm
+    channel_indices = {
+        name: int(name) - 1
+        for name in variables
+        if isinstance(name, str) and name.isdecimal()
     }
-    band_masks = {}
-    for name, (wn_min, wn_max) in IASI_BANDS.items():
-        mask = (wn >= wn_min) & (wn <= wn_max)
-
-        if not np.any(mask):
-            raise ValueError(f"No channels in band {name}")
-
-        band_masks[name] = mask
-    bands_out = {name: [] for name in band_masks}
+    invalid_channels = [
+        name for name, index in channel_indices.items() if index < 0 or index >= n_chan
+    ]
+    if invalid_channels:
+        raise ValueError(
+            f"IASI channels outside available 1..{n_chan}: "
+            + ", ".join(invalid_channels)
+        )
+    if not channel_indices:
+        raise ValueError(f"No supported IASI variables requested: {variables}")
+    channels_out = {name: [] for name in channel_indices}
     for i in range(n_mdr):
         base = f"/MDR[{i}]/MDR"
-        rad = np.asarray(coda.fetch(f, base + "/GS1cSpect"))
-        loc = np.asarray(coda.fetch(f, base + "/GGeoSondLoc"))
+        rad = np.asarray(coda.fetch(coda_file, base + "/GS1cSpect"))
+        loc = np.asarray(coda.fetch(coda_file, base + "/GGeoSondLoc"))
+        onboard_utc = np.asarray(coda.fetch(coda_file, base + "/OnboardUTC"))
         lon, lat = loc[..., 0], loc[..., 1]
         rad = rad.reshape(-1, rad.shape[-1])
         lat = lat.reshape(-1)
         lon = lon.reshape(-1)
+        flat_time_count = rad.shape[0]
+        if onboard_utc.size == flat_time_count:
+            onboard_utc = onboard_utc.reshape(-1)
+        elif onboard_utc.size > 0 and flat_time_count % onboard_utc.size == 0:
+            onboard_utc = np.repeat(
+                onboard_utc.reshape(-1),
+                flat_time_count // onboard_utc.size,
+            )
+        else:
+            onboard_utc = np.full(flat_time_count, np.nanmedian(onboard_utc))
 
-        for name, mask in band_masks.items():
-            bands_out[name].append(rad[:, mask].mean(axis=1))
+        for name, index in channel_indices.items():
+            channels_out[name].append(rad[:, index])
 
         lats.append(lat)
         lons.append(lon)
+        scan_times.append(onboard_utc)
 
-    # concatenate everything
+    if hasattr(coda, "close"):
+        coda.close(coda_file)
+
     lats = np.concatenate(lats)
     lons = np.concatenate(lons)
-    bands_out = {k: np.concatenate(v) for k, v in bands_out.items()}
-    swath = SwathDefinition(lons=lons, lats=lats)
+    scan_times = np.concatenate(scan_times)
+    channels_out = {k: np.concatenate(v) for k, v in channels_out.items()}
 
-    out = {}
-    for name, values in bands_out.items():
-        grid = resample_nearest(
-            swath,
-            values,
-            area,
-            radius_of_influence=radius_of_influence,
-            fill_value=np.nan,
+    if bbox is not None:
+        min_lon, min_lat, max_lon, max_lat = bbox
+        inside = (
+            (lons >= min_lon)
+            & (lons <= max_lon)
+            & (lats >= min_lat)
+            & (lats <= max_lat)
         )
-        out[name] = grid
-    tgt_lons, tgt_lats = area.get_lonlats()
-    ds = xr.Dataset(
-        {name: (("y", "x"), data) for name, data in out.items()},
-        coords={
-            "lon": (("y", "x"), np.asarray(tgt_lons)),
-            "lat": (("y", "x"), np.asarray(tgt_lats)),
-        },
-        attrs={
-            "source": "IASI L1C EPS",
-            "platform": "Metop",
-        },
-    )
+        if not np.any(inside):
+            raise ValueError(f"No IASI samples in bbox {bbox} for {eps_file}")
+        lats = lats[inside]
+        lons = lons[inside]
+        scan_times = scan_times[inside]
+        channels_out = {name: values[inside] for name, values in channels_out.items()}
+
+    selected_values = channels_out
+    if area is None:
+        epoch_naive = datetime.datetime(2000, 1, 1)
+        data_vars = {
+            name: ("cell", values.astype(np.float32))
+            for name, values in selected_values.items()
+        }
+        data_vars.update(
+            {
+                "latitude": ("cell", lats.astype(np.float32)),
+                "longitude": ("cell", lons.astype(np.float32)),
+                "scan_time": (
+                    "cell",
+                    pd.to_datetime(epoch_naive) + pd.to_timedelta(scan_times, unit="s"),
+                ),
+            }
+        )
+        ds = xr.Dataset(
+            data_vars,
+            coords={"cell": np.arange(lats.size, dtype=np.int64)},
+            attrs={
+                "source": "IASI L1C EPS",
+                "platform": "Metop",
+            },
+        )
+    else:
+        from pyresample.geometry import SwathDefinition
+        from pyresample.kd_tree import resample_nearest
+
+        swath = SwathDefinition(lons=lons, lats=lats)
+
+        out = {}
+        for name, values in selected_values.items():
+            grid = resample_nearest(
+                swath,
+                values,
+                area,
+                radius_of_influence=radius_of_influence,
+                fill_value=np.nan,
+            )
+            out[name] = grid
+        tgt_lons, tgt_lats = area.get_lonlats()
+        ds = xr.Dataset(
+            {name: (("y", "x"), data) for name, data in out.items()},
+            coords={
+                "longitude": (("y", "x"), np.asarray(tgt_lons)),
+                "latitude": (("y", "x"), np.asarray(tgt_lats)),
+            },
+            attrs={
+                "source": "IASI L1C EPS",
+                "platform": "Metop",
+            },
+        )
+    for name, index in channel_indices.items():
+        ds[name].attrs.update(
+            {
+                "long_name": f"IASI channel {name} radiance",
+                "channel": int(name),
+                "wavenumber_cm-1": float(wn[index]),
+            }
+        )
     return ds, times.replace(tzinfo=None)
 
 
@@ -1448,7 +1541,9 @@ def plot_polar(
         lon = lon2d.ravel()
         lat = lat2d.ravel()
     else:
-        raise KeyError("Dataset must contain either longitude/latitude or x/y coordinates.")
+        raise KeyError(
+            "Dataset must contain either longitude/latitude or x/y coordinates."
+        )
     val = ds[var].values.ravel()
     valid = np.isfinite(lon) & np.isfinite(lat) & np.isfinite(val)
     lon = lon[valid]
