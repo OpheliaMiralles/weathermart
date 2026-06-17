@@ -19,7 +19,9 @@ from weathermart.base import variables_metadata
 from weathermart.utils import NORDIC_DOMAIN
 from weathermart.utils import batched
 
-frost_vars = list(variables_metadata[variables_metadata.source == "FROST"].short_name.unique())
+frost_vars = list(
+    variables_metadata[variables_metadata.source == "FROST"].short_name.unique()
+)
 lightning_vars = [
     "lightning_count",
     "lightning_cloud_to_ground",
@@ -96,7 +98,9 @@ def _parse_lightning_ualf(text: str) -> pd.DataFrame:
     for col in ["year", "month", "day", "hour", "minute", "second", "cloud"]:
         if col in df:
             df[col] = pd.to_numeric(df[col], errors="coerce")
-    df = df.dropna(subset=["year", "month", "day", "hour", "minute", "second", "lat", "lon"])
+    df = df.dropna(
+        subset=["year", "month", "day", "hour", "minute", "second", "lat", "lon"]
+    )
     if df.empty:
         return df
 
@@ -155,10 +159,8 @@ def _open_template_grid(
 
     return ds, x_name, y_name, x, y, str(inferred_crs)
 
-def frost_observations_to_dataframe(
-    data: list[dict]
-) -> pd.DataFrame:
 
+def frost_observations_to_dataframe(data: list[dict]) -> pd.DataFrame:
     rows = []
     for item in data:
         raw_source_id = item.get("sourceId")
@@ -185,16 +187,14 @@ def frost_observations_to_dataframe(
         "time",
     ]
     index_cols = [col for col in index_cols if col in long.columns]
-    values = (
-        long.pivot_table(
-            index=index_cols,
-            columns="elementId",
-            values="value",
-            aggfunc="first",
-        )
-        .reset_index()
-    )
+    values = long.pivot_table(
+        index=index_cols,
+        columns="elementId",
+        values="value",
+        aggfunc="first",
+    ).reset_index()
     return values
+
 
 def frost_locations_to_gdf(data):
     features = []
@@ -210,11 +210,7 @@ def frost_locations_to_gdf(data):
         if "@type" in geometry:
             geometry["type"] = geometry.pop("@type")
 
-        properties = {
-            key: value
-            for key, value in item.items()
-            if key != "geometry"
-        }
+        properties = {key: value for key, value in item.items() if key != "geometry"}
 
         if "nearest" in geometry:
             properties["nearest"] = geometry.pop("nearest")
@@ -228,6 +224,7 @@ def frost_locations_to_gdf(data):
         )
 
     return gpd.GeoDataFrame.from_features(features, crs="EPSG:4326")
+
 
 class FrostRetriever(BaseRetriever):
     """
@@ -244,6 +241,7 @@ class FrostRetriever(BaseRetriever):
     variables : dict
         Mapping of variables to their frost short names.
     """
+
     FROST_URL = "https://frost.met.no"
     sources = ("OBSERVATIONS", "LIGHTNING")
     crs = "epsg:4326"
@@ -424,9 +422,7 @@ class FrostRetriever(BaseRetriever):
                 tz="UTC",
             ).tz_convert(None)
             if df.empty:
-                empty = np.zeros(
-                    (len(full_times), len(y), len(x)), dtype=np.float32
-                )
+                empty = np.zeros((len(full_times), len(y), len(x)), dtype=np.float32)
                 ds = xr.Dataset(
                     {
                         "lightning_count": (("time", y_name, x_name), empty),
@@ -488,14 +484,25 @@ class FrostRetriever(BaseRetriever):
             np.add.at(total, (bucket_idx, y_idx, x_idx), 1.0)
             cg_mask = cloud == 0
             if np.any(cg_mask):
-                np.add.at(cloud_to_ground, (bucket_idx[cg_mask], y_idx[cg_mask], x_idx[cg_mask]), 1.0)
+                np.add.at(
+                    cloud_to_ground,
+                    (bucket_idx[cg_mask], y_idx[cg_mask], x_idx[cg_mask]),
+                    1.0,
+                )
             ic_mask = ~cg_mask
             if np.any(ic_mask):
-                np.add.at(intracloud, (bucket_idx[ic_mask], y_idx[ic_mask], x_idx[ic_mask]), 1.0)
+                np.add.at(
+                    intracloud,
+                    (bucket_idx[ic_mask], y_idx[ic_mask], x_idx[ic_mask]),
+                    1.0,
+                )
             ds = xr.Dataset(
                 {
                     "lightning_count": (("time", y_name, x_name), total),
-                    "lightning_cloud_to_ground": (("time", y_name, x_name), cloud_to_ground),
+                    "lightning_cloud_to_ground": (
+                        ("time", y_name, x_name),
+                        cloud_to_ground,
+                    ),
                     "lightning_intracloud": (("time", y_name, x_name), intracloud),
                 },
                 coords={"time": full_times, y_name: y, x_name: x},
@@ -527,7 +534,6 @@ class FrostRetriever(BaseRetriever):
         if len(day_datasets) == 1:
             return day_datasets[0]
         return xr.concat(day_datasets, dim="time")
-
 
     def retrieve(
         self,
@@ -613,21 +619,25 @@ class FrostRetriever(BaseRetriever):
             start, stop = isodates[0], isodates[-1]
         timerange = "/".join([start, stop])
         coords_station_df = FrostRetriever.get_stations(
-                client_id=client_id,
-                client_secret=client_secret,
-                longitude_range=longitude_range,
-                latitude_range=latitude_range,
-                stations=stations,
-            )
+            client_id=client_id,
+            client_secret=client_secret,
+            longitude_range=longitude_range,
+            latitude_range=latitude_range,
+            stations=stations,
+        )
         stations = coords_station_df["id"].tolist()
-        avail_for_date = [v["sourceId"].replace(":0", "") for v in FrostRetriever.request_from_frost(
+        avail_for_date = [
+            v["sourceId"].replace(":0", "")
+            for v in FrostRetriever.request_from_frost(
                 endpoint="observations/availableTimeSeries",
                 client_id=client_id,
                 client_secret=client_secret,
                 args={
                     "elements": ",".join(variables),
                     "referencetime": timerange,
-                }).json()["data"]]
+                },
+            ).json()["data"]
+        ]
         to_concat = []
         i = 0
         batches = batched(stations, 500)
@@ -636,7 +646,7 @@ class FrostRetriever(BaseRetriever):
             logging.info(
                 "Retrieving data for batch %s/%s of 500 stations", i, nr_batches
             )
-            
+
             s_slice = [s for s in s_slice if s in avail_for_date]
             query_args = {
                 "sources": ",".join(s_slice),
@@ -653,10 +663,9 @@ class FrostRetriever(BaseRetriever):
             if len(geodf) == 0:
                 logging.warning("No data available for batch %s of 500 stations", i)
             else:
-                geodf = (
-                    geodf.merge(coords_station_df, on="id", how="left")
-                    .set_geometry("geometry")
-                )
+                geodf = geodf.merge(
+                    coords_station_df, on="id", how="left"
+                ).set_geometry("geometry")
                 # weird xarray issue when converting dataframe pandas with timezone info
                 # it is currently being resolved, this is a temporary fix
                 geodf["time"] = pd.to_datetime(geodf["time"])
@@ -664,7 +673,12 @@ class FrostRetriever(BaseRetriever):
                 geodf.index = geodf.index.tz_convert("UTC").tz_localize(None)
                 to_concat.append(geodf)
             i += 1
-        geodf = pd.concat(to_concat).set_geometry("geometry").reset_index().rename(columns = {"id": "station"})
+        geodf = (
+            pd.concat(to_concat)
+            .set_geometry("geometry")
+            .reset_index()
+            .rename(columns={"id": "station"})
+        )
         coords_station_df = coords_station_df.rename(columns={"id": "station"})
         # fill variables with nans for non-retrieved stations
         coords_station_xa = (

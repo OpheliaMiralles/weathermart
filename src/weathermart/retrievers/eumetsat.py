@@ -420,6 +420,233 @@ def _stack_dims_to_cell(ds: xr.Dataset, dims: tuple[str, ...]) -> xr.Dataset:
     return ds.assign_coords(cell=np.arange(ds.sizes["cell"], dtype=np.int64))
 
 
+def _is_numeric_channel_name(name: Any) -> bool:
+    return isinstance(name, str) and name.isdecimal()
+
+
+def _iasi_wavenumber_cm1(channel: xr.DataArray) -> xr.DataArray:
+    return 645.0 + (channel.astype(np.float32) - 1.0) * 0.25
+
+
+def _flatten_non_time_dims_to_cell(
+    array: xr.DataArray,
+    *,
+    output_dim: str = "cell",
+) -> xr.DataArray:
+    """Flatten all non-time dimensions to an observation/cell dimension.
+
+    Xarray cannot create a stacked dimension called ``cell`` when ``cell`` is
+    already one of the dimensions being stacked.  Several EUMETSAT readers
+    already expose swath samples as ``cell`` before we add the synthetic channel
+    axis, so temporarily rename the existing sample dimension before stacking.
+    """
+    stack_dims = [dim for dim in array.dims if dim != "time"]
+    if not stack_dims:
+        return array
+
+    if output_dim in stack_dims:
+        sample_dim = f"_{output_dim}_sample"
+        while sample_dim in array.dims:
+            sample_dim = f"_{sample_dim}"
+        array = array.rename({output_dim: sample_dim})
+        stack_dims = [sample_dim if dim == output_dim else dim for dim in stack_dims]
+
+    return array.stack({output_dim: stack_dims}).reset_index(output_dim)
+
+
+def _stack_dataarray_like_brightness_temperature(
+    da: xr.DataArray,
+    *,
+    reference_dims: tuple[str, ...],
+    channel_values: np.ndarray,
+) -> xr.DataArray | None:
+    """
+    Repeat a metadata array along the same synthetic channel axis used for
+    brightness_temperature, then flatten all non-time sample dimensions to cell.
+    """
+    if not set(da.dims).issubset(set(reference_dims)):
+        return None
+    expanded = da
+    if "_radiance_channel" not in expanded.dims:
+        expanded = expanded.expand_dims(
+            _radiance_channel=xr.IndexVariable("_radiance_channel", channel_values)
+        )
+    dims = [dim for dim in reference_dims if dim in expanded.dims]
+    expanded = expanded.transpose(*dims)
+    return _flatten_non_time_dims_to_cell(expanded)
+
+
+def _stack_radiance_channels_as_observations(
+    ds: xr.Dataset,
+    requested_variables: list[str],
+    *,
+    instrument: str,
+    output_name: str = "brightness_temperature",
+) -> xr.Dataset:
+    """
+    Convert an EUMETSAT per-channel/wide radiance dataset to the same logical
+    layout as MARS ODB radiances: one observation variable plus a companion
+    channel variable on the flattened cell axis.
+
+    Input example:
+        "6"(cell), "7"(cell), latitude(cell), longitude(cell)
+
+    Output example:
+        brightness_temperature(cell), channel(cell), latitude(cell), longitude(cell)
+
+    If a time dimension is already present, time is preserved and all other
+    dimensions, including the synthetic channel axis, are flattened into cell.
+    """
+    channel_vars = [
+        str(variable)
+        for variable in requested_variables
+        if _is_numeric_channel_name(str(variable)) and str(variable) in ds.data_vars
+    ]
+    if not channel_vars:
+        return ds
+
+    first = ds[channel_vars[0]]
+    sample_dims = tuple(first.dims)
+    incompatible = [
+        name for name in channel_vars if tuple(ds[name].dims) != sample_dims
+    ]
+    if incompatible:
+        logger.warning(
+            "Cannot stack radiance channels for %s because channel variables have "
+            "incompatible dimensions: %s",
+            instrument,
+            incompatible,
+        )
+        return ds
+
+    channel_values = np.asarray([int(name) for name in channel_vars], dtype=np.int32)
+    channel_axis = xr.IndexVariable("_radiance_channel", channel_values)
+    stacked_channels = xr.concat(
+        [ds[name].astype(np.float32) for name in channel_vars],
+        dim=channel_axis,
+    )
+    reference_dims = tuple(
+        dim for dim in sample_dims if dim in stacked_channels.dims
+    ) + ("_radiance_channel",)
+    stacked_channels = stacked_channels.transpose(*reference_dims)
+    brightness_temperature = _flatten_non_time_dims_to_cell(stacked_channels)
+
+    out = xr.Dataset(
+        {output_name: brightness_temperature.reset_coords(drop=True)},
+        attrs=dict(ds.attrs),
+    )
+    out[output_name].attrs.update(
+        {
+            "long_name": f"{instrument} channel radiance observation",
+            "radiance_layout": "mars_odb_like",
+        }
+    )
+    if instrument != "IASI":
+        out[output_name].attrs.setdefault("units", "K")
+    else:
+        out[output_name].attrs.setdefault("units", "native_l1c_radiance")
+        out[output_name].attrs["long_name"] = "IASI L1C spectral radiance observation"
+        out[output_name].attrs["source_field"] = "GS1cSpect"
+        out[output_name].attrs["note"] = (
+            "IASI GS1cSpect values are native L1C spectral radiances, not "
+            "Planck-inverted brightness temperatures."
+        )
+
+    if "_radiance_channel" in brightness_temperature.coords:
+        channel = brightness_temperature["_radiance_channel"].astype(np.int32)
+    else:
+        # Fallback for xarray versions that drop stacked-dimension coordinates.
+        # Build a template with the same sample dimensions as the radiance array,
+        # filled with the instrument-local channel number, then flatten it with
+        # the identical helper used for the radiance values.
+        template = xr.zeros_like(stacked_channels, dtype=np.int32) + stacked_channels[
+            "_radiance_channel"
+        ].astype(np.int32)
+        channel = _flatten_non_time_dims_to_cell(template)
+    out["channel"] = channel.reset_coords(drop=True)
+    out["channel"].attrs.update(
+        {
+            "long_name": f"{instrument} channel number",
+            "description": "Instrument-local channel index; combine with instrument_id to disambiguate.",
+        }
+    )
+    out["instrument_id"] = xr.full_like(
+        out["channel"], RADIANCE_INSTRUMENT_IDS.get(instrument, -1)
+    )
+    out["instrument_id"].attrs.update(
+        {
+            "long_name": "radiance instrument identifier",
+            "instrument_id_map": repr(RADIANCE_INSTRUMENT_IDS),
+        }
+    )
+    if instrument == "IASI":
+        out["wavenumber_cm1"] = _iasi_wavenumber_cm1(out["channel"])
+        out["wavenumber_cm1"].attrs.update(
+            {
+                "long_name": "IASI approximate channel-centre wavenumber",
+                "units": "cm-1",
+                "formula": "645.0 + (channel - 1) * 0.25",
+            }
+        )
+
+    metadata_dims = tuple(dim for dim in stacked_channels.dims)
+    for name, da in ds.data_vars.items():
+        if name in channel_vars or name in out:
+            continue
+        stacked = _stack_dataarray_like_brightness_temperature(
+            da,
+            reference_dims=metadata_dims,
+            channel_values=channel_values,
+        )
+        if (
+            stacked is not None
+            and "cell" in stacked.dims
+            and stacked.sizes["cell"] == out.sizes["cell"]
+        ):
+            out[name] = stacked.reset_coords(drop=True)
+            out[name].attrs.update(da.attrs)
+
+    for coord_name in ("latitude", "longitude"):
+        if coord_name in brightness_temperature.coords and coord_name not in out:
+            out[coord_name] = brightness_temperature[coord_name].reset_coords(drop=True)
+
+    out = out.assign_coords(cell=np.arange(out.sizes["cell"], dtype=np.int64))
+    out.attrs["radiance_layout"] = "mars_odb_like"
+    out.attrs["radiance_instrument"] = instrument
+    return out
+
+
+def _concat_cell_observations_by_time(ds: xr.Dataset) -> xr.Dataset:
+    """
+    Aggregate a MARS-ODB-like observation dataset by concatenating observations
+    inside each requested time window rather than averaging arbitrary cell IDs.
+    """
+    if "time" not in ds.dims or "cell" not in ds.dims:
+        return ds
+
+    groups: list[xr.Dataset] = []
+    for time_value in pd.DatetimeIndex(sorted(pd.unique(ds["time"].values))):
+        selected = ds.sel(time=time_value)
+        if selected.sizes.get("time", 0) == 1:
+            flattened = selected.isel(time=0, drop=True)
+        else:
+            flattened = (
+                selected.stack(_obs=("time", "cell"))
+                .reset_index("_obs", drop=True)
+                .rename({"_obs": "cell"})
+            )
+        flattened = flattened.assign_coords(
+            cell=np.arange(flattened.sizes["cell"], dtype=np.int64)
+        )
+        flattened = flattened.expand_dims(time=[time_value])
+        groups.append(flattened)
+    if not groups:
+        return ds.isel(time=slice(0, 0))
+    out = xr.concat(groups, dim="time", join="outer")
+    out.attrs.update(ds.attrs)
+    return out
+
+
 def _encode_satellite_attr_value(value: Any) -> Any:
     if isinstance(value, np.ndarray):
         return value.tolist()
@@ -795,6 +1022,19 @@ class EumetsatRetriever(BaseRetriever):
                                         area,
                                     )
                             t = extract_time_flex(Path(f).stem)
+                        instrument = RADIANCE_READER_INSTRUMENTS.get(reader)
+                        if instrument is not None:
+                            radiance_output_name = (
+                                "spectral_radiance"
+                                if instrument == "IASI"
+                                else "brightness_temperature"
+                            )
+                            ds = _stack_radiance_channels_as_observations(
+                                ds,
+                                satpy_vars,
+                                instrument=instrument,
+                                output_name=radiance_output_name,
+                            )
                         ds = _prepare_eumetsat_dataset_time(
                             ds,
                             t,
@@ -911,7 +1151,13 @@ class EumetsatRetriever(BaseRetriever):
             ds = ds.assign_coords(
                 time=_time_window_centers(ds["time"].values, aggregation_window)
             )
-            ds = ds.groupby("time").mean(skipna=True).sel(time=dates)
+            if ds.attrs.get("radiance_layout") == "mars_odb_like" and "cell" in ds.dims:
+                ds = _concat_cell_observations_by_time(ds).sel(time=dates)
+            else:
+                ds = ds.groupby("time").mean(
+                    skipna=True
+                )  # .sel(time=dates, method="nearest")
+                print(ds.time.values)
         ds["time"] = pd.to_datetime(ds["time"].values).tz_localize(None)
         ds = _sanitize_dataset_for_zarr(ds)
         return ds
@@ -1098,10 +1344,8 @@ def iasi_metop_to_xarray(
     and regrid to a target AREA.
     """
     import coda
-    from pyresample.geometry import SwathDefinition
-    from pyresample.kd_tree import resample_nearest
 
-    f = coda.open(eps_file)
+    coda_file = coda.open(eps_file)
     lats = []
     lons = []
     n_mdr = len(coda.fetch(f, "/MDR"))

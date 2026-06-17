@@ -7,11 +7,17 @@ You need to get an API key from EUMETSAT to use this retriever, see `the EUMETSA
 
 .. code-block:: python
 
+    import pandas as pd
+
     from weathermart.retrievers.eumetsat import EumetsatRetriever
 
     retriever = EumetsatRetriever()
-
-    ds = retriever.retrieve("MSG_SEVIRI", "IR_039", ["2024-01-01T12:00:00"])
+    ds = retriever.retrieve(
+        source="MSG_SEVIRI",
+        variables=["IR_039"],
+        dates=[pd.Timestamp("2024-01-01T12:00:00")],
+        eumdac_credentials_path=".eumdac_credentials.json",
+    )
 
 .. image:: ../_static/satellite_eumetsat_20231020.png
     :width: 800
