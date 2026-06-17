@@ -19,7 +19,6 @@ CREDENTIALS_PATH = os.environ.get("EUMDAC_CREDENTIALS_PATH", ".eumdac_credential
 
 ODB_INSTRUMENTS = ["AMSU-A", "AMSU-B/MHS", "ATMS", "MWHS-2", "AWS"]
 ATMS_CHANNELS = [str(channel) for channel in [*range(6, 16), *range(18, 23)]]
-AWS_CHANNELS = [str(channel) for channel in [*range(4, 9), *range(11, 16)]]
 
 
 def save_current_figure(path: Path) -> None:
@@ -141,14 +140,6 @@ def plot_eumetsat() -> None:
             "date": pd.Timestamp("2015-01-01T09:00:00"),
             "plot_var": "6",
             "output": "eumetsat_atms_channel_6_lat_gt_20_polar.png",
-        },
-        {
-            "source": "AWS",
-            "product": "mwr_l1b",
-            "variables": AWS_CHANNELS,
-            "date": pd.Timestamp("2025-04-10T00:00:00"),
-            "plot_var": "4",
-            "output": "eumetsat_aws_channel_4_lat_gt_20_polar.png",
         },
     ]
     for request in requests:

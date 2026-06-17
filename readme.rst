@@ -29,7 +29,7 @@ Available retrievers
      - Local Nordic radar composites.
    * - ``EumetsatRetriever``
      - ``MSG_SEVIRI``, ``METOP``, ``MTG``, ``NOAA``, ``AWS``
-     - Geostationary and polar-orbiting EUMETSAT products.
+     - EUMETSAT satellite products.
    * - ``MarsRetriever``
      - ``MARS``, ``ECMWF_MARS``, ``MARS_GRIB``
      - ECMWF MARS requests.
@@ -38,10 +38,10 @@ Available retrievers
      - ECMWF MARS ODB radiance request files and optional submission.
    * - ``FrostRetriever``
      - ``OBSERVATIONS``, ``LIGHTNING``
-     - Frost station observations and gridded lightning counts.
+     - Frost observations and gridded lightning counts.
    * - ``NetAtmoRetriever``
      - ``NETATMO``
-     - Local NetAtmo station archive data.
+     - Local NetAtmo archive data.
    * - ``TitanRetriever``
      - ``TITAN``
      - Local TITAN Nordic analysis diagnostics.
@@ -96,4 +96,4 @@ Provider use:
    )
 
 Use ``cache_location=None`` to disable caching. More examples are available in
-the ``examples/`` directory.
+the ``src/weathermart/examples/`` directory.

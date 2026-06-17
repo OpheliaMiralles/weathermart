@@ -37,7 +37,7 @@ Current built-in retrievers
      - Local Nordic radar composites.
    * - ``EumetsatRetriever``
      - ``MSG_SEVIRI``, ``METOP``, ``MTG``, ``NOAA``, ``AWS``
-     - EUMETSAT geostationary and polar-orbiting products.
+     - EUMETSAT satellite products.
    * - ``MarsRetriever``
      - ``MARS``, ``ECMWF_MARS``, ``MARS_GRIB``
      - ECMWF MARS requests.

@@ -46,11 +46,11 @@ The currently registered retrievers are:
 | `FDBRetriever` | configured by FDB request | GRIB data from an ECMWF FDB installation. |
 | `OperaRetriever` | `OPERA` | OPERA radar composites from the MeteoFrance API. |
 | `NordicRadarRetriever` | `NORDIC_RADAR` | Local Nordic radar composites. |
-| `EumetsatRetriever` | `MSG_SEVIRI`, `METOP`, `MTG`, `NOAA`, `AWS` | Geostationary and polar-orbiting EUMETSAT products. |
+| `EumetsatRetriever` | `MSG_SEVIRI`, `METOP`, `MTG`, `NOAA`, `AWS` | EUMETSAT satellite products. |
 | `MarsODBRetriever` | `MARS_ODB`, `ECMWF_ODB` | ECMWF MARS ODB radiance request files and optional submission. |
 | `MarsRetriever` | `MARS`, `ECMWF_MARS`, `MARS_GRIB` | ECMWF MARS requests. |
-| `FrostRetriever` | `OBSERVATIONS`, `LIGHTNING` | Frost station observations and gridded lightning counts. |
-| `NetAtmoRetriever` | `NETATMO` | Local NetAtmo station archive data. |
+| `FrostRetriever` | `OBSERVATIONS`, `LIGHTNING` | Frost observations and gridded lightning counts. |
+| `NetAtmoRetriever` | `NETATMO` | Local NetAtmo archive data. |
 | `TitanRetriever` | `TITAN` | Local TITAN Nordic analysis diagnostics. |
 | `CEDTMRetriever` | `CEDTM` | Copernicus DEM tiles. |
 | `NASADEMRetriever` | `NASADEM` | NASADEM tiles. |
@@ -103,5 +103,5 @@ ds = provider.provide_from_config(
 
 Pass `cache_location=None` to skip caching.
 
-Runnable examples live in [`examples/`](examples/), and Sphinx documentation is
-under [`docs/`](docs/).
+Runnable examples live in [`src/weathermart/examples/`](src/weathermart/examples/),
+and Sphinx documentation is under [`docs/`](docs/).
