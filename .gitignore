@@ -11,9 +11,9 @@ wheels/
 
 .codex
 .agents
-.ruff-cache
 .uv-cache
 .vscode
+.ruff_cache
 # Virtual environments
 .venv
 uv.lock
