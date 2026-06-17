@@ -1,5 +1,4 @@
 import datetime
-import os
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -12,8 +11,9 @@ from weathermart.retrievers.mars import MINIMAL_RADIANCE_ODB_COLUMNS
 from weathermart.retrievers.mars import MarsODBRetriever
 from weathermart.utils import NORTH_LATITUDE_20_DOMAIN_FILTER
 
-rc_credential_path = Path(os.environ.get("ECMWF_API_RC_PATH", ".ecmwfapirc"))
-output_dir = Path(os.environ.get("MARS_ODB_OUTPUT_DIR", "mars_odb_requests"))
+retriever = MarsODBRetriever()
+rc_credential_path = Path(".ecmwfapirc")
+output_dir = Path("mars_odb_requests")
 plot_dir = Path("plots/radiance_instruments")
 plot_output = True
 aggregation_window = "3h"
@@ -87,7 +87,6 @@ def plot_instrument(data, instrument: str) -> None:
 
 
 def retrieve() -> None:
-    retriever = MarsODBRetriever()
     start = datetime.datetime.now(datetime.UTC)
     data = retriever.retrieve(
         source="MARS_ODB",

@@ -1,28 +1,24 @@
-import datetime
-
 import pandas as pd
-
+import datetime
 from weathermart.default_provider import default_provider
-
+p = default_provider() 
 dates = [
-    "20200110",
+    "2020-05-10",
 ]
-
-p = default_provider()
-
-
+all_dates = pd.to_datetime(dates)
 def retrieve():
     for date in pd.to_datetime(dates):
         try:
             print(f"Retrieving date {date.date()}")
             start = datetime.datetime.utcnow()
             data = p.provide(
-                source="OPERA",
-                variables=["RAINFALL_RATE", "qc_flags"],
-                dates=[pd.to_datetime(date)],
-                meteofranceapi_token_path="/home/opmir9231/weathermart/.meteofranceapi_token.json",
-                storage_key="",
-            )
+            source='NORDIC_RADAR',
+            variables=['lwe_precipitation_rate', 'qc_flags'],
+            dates=[pd.to_datetime(date)],
+            dense_qc=True,
+            test=True,
+            storage_key="start_2020_example")
+            #print(data)
             end = datetime.datetime.utcnow()
             print(f"Retrieval took {end - start}")
         except Exception as e:

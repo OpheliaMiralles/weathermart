@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -28,10 +27,11 @@ bounds = (xmin, ymin, xmax, ymax)
 # DEM sources are static, but the provider interface still expects a date.
 dates = [pd.Timestamp("2025-01-01")]
 
+p = default_provider()
+
 
 def retrieve():
-    provider = default_provider(cache_location=os.environ.get("WEATHERMART_CACHE"))
-    data = provider.provide(
+    data = p.provide(
         source=SOURCE,
         variables=VARIABLES,
         dates=dates,

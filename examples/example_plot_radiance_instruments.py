@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -15,7 +14,6 @@ MARS_ODB_DIR = Path("mars_odb_requests")
 MARS_ODB_DATE = pd.Timestamp("2024-02-06T00:00:00")
 EUMETSAT_TEST_MODE = True
 AGGREGATION_WINDOW = "3h"
-CREDENTIALS_PATH = os.environ.get("EUMDAC_CREDENTIALS_PATH", ".eumdac_credentials.json")
 
 ODB_INSTRUMENTS = ["AMSU-A", "AMSU-B/MHS", "ATMS", "MWHS-2", "AWS"]
 ATMS_CHANNELS = [str(channel) for channel in [*range(6, 16), *range(18, 23)]]
@@ -157,7 +155,7 @@ def plot_eumetsat() -> None:
             variables=request["variables"],
             product=request["product"],
             dates=[request["date"]],
-            eumdac_credentials_path=CREDENTIALS_PATH,
+            eumdac_credentials_path=".eumdac_credentials.json",
             resolution="16km",
             resample=False,
             aggregation_window=AGGREGATION_WINDOW,

@@ -1,5 +1,4 @@
 import datetime
-import os
 import traceback
 from pathlib import Path
 
@@ -10,7 +9,7 @@ from weathermart.retrievers.eumetsat import EumetsatRetriever
 from weathermart.retrievers.eumetsat import plot_polar
 from weathermart.utils import NORTH_LATITUDE_20_BBOX
 
-CREDENTIALS_PATH = os.environ.get("EUMDAC_CREDENTIALS_PATH", ".eumdac_credentials.json")
+CREDENTIALS_PATH = ".eumdac_credentials.json"
 PLOT_DIR = Path("plots/radiance_instruments")
 
 DATE = pd.Timestamp("2021-01-10T12:00:00")
@@ -63,7 +62,8 @@ def retrieve() -> None:
     retriever = EumetsatRetriever()
     try:
         print(
-            f"Retrieving {len(IASI_CHANNELS)} IASI channels for {DATE:%Y-%m-%d %H:%M}"
+            f"Retrieving {len(IASI_CHANNELS)} IASI channels for "
+            f"{DATE:%Y-%m-%d %H:%M}"
         )
         start = datetime.datetime.now(datetime.UTC)
         data = retriever.retrieve(
