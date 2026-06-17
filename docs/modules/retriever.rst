@@ -41,9 +41,6 @@ Current built-in retrievers
    * - ``MarsODBRetriever``
      - ``MARS_ODB``, ``ECMWF_ODB``
      - MARS ODB request files and optional submission.
-   * - ``TitanRetriever``
-     - ``TITAN``
-     - Local TITAN Nordic analysis diagnostics.
    * - ``CEDTMRetriever``
      - ``CEDTM``
      - Copernicus DEM tiles.

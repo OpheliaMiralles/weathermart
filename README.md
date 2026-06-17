@@ -47,7 +47,6 @@ The currently registered retrievers are:
 | `EumetsatRetriever` | `MSG_SEVIRI`, `METOP`, `MTG`, `NOAA`, `AWS` | Geostationary and polar-orbiting EUMETSAT products. |
 | `MarsODBRetriever` | `MARS_ODB`, `ECMWF_ODB` | ECMWF MARS ODB radiance request files and optional submission. |
 | `MarsRetriever` | `MARS`, `ECMWF_MARS`, `MARS_GRIB` | ECMWF MARS requests. |
-| `TitanRetriever` | `TITAN` | Local TITAN Nordic analysis diagnostics. |
 | `CEDTMRetriever` | `CEDTM` | Copernicus DEM tiles. |
 | `NASADEMRetriever` | `NASADEM` | NASADEM tiles. |
 | `DHM25Retriever` | `DHM25` | Swiss DHM25 terrain data. |

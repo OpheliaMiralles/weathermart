@@ -33,9 +33,6 @@ Available retrievers
    * - ``MarsODBRetriever``
      - ``MARS_ODB``, ``ECMWF_ODB``
      - ECMWF MARS ODB radiance request files and optional submission.
-   * - ``TitanRetriever``
-     - ``TITAN``
-     - Local TITAN Nordic analysis diagnostics.
    * - ``CEDTMRetriever``
      - ``CEDTM``
      - Copernicus DEM tiles.

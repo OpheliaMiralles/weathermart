@@ -7,4 +7,3 @@ from weathermart.retrievers.grib import GribRetriever as GribRetriever
 from weathermart.retrievers.mars import MarsODBRetriever as MarsODBRetriever
 from weathermart.retrievers.mars import MarsRetriever as MarsRetriever
 from weathermart.retrievers.radar import OperaRetriever as OperaRetriever
-from weathermart.retrievers.titan import TitanRetriever as TitanRetriever
