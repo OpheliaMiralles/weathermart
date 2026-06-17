@@ -325,7 +325,8 @@ def netatmo_to_xarray_parallel(datetimes, variables=None):
 
     with ProcessPoolExecutor(max_workers=MAX_WORKERS) as ex:
         futures = {
-            ex.submit(_worker_netatmo_block, block, variables): block for block in blocks
+            ex.submit(_worker_netatmo_block, block, variables): block
+            for block in blocks
         }
 
         for fut in as_completed(futures):
@@ -383,8 +384,7 @@ class NetAtmoRetriever(BaseRetriever):
         pack_nan_flags: bool = True,
         round_decimals: int = 4,
     ) -> xr.Dataset:
-        import yrlib
-        import yrlib.netatmo
+
         dates, variables = checktype(dates, variables)
         varnames_req = list(variables)
         unique_days = sorted(set(pd.to_datetime(d).date() for d in dates))

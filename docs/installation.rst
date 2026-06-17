@@ -30,5 +30,7 @@ Some of the dependencies are split up into different extras.
 +-------------------------------+------------+--------------------------------------------+
 | DEM (Digital elevation model) | dem        | rioxarray pystac-client planetary-computer |
 +-------------------------------+------------+--------------------------------------------+
+| NetAtmo local archive         | netatmo    | yrprod                                     |
++-------------------------------+------------+--------------------------------------------+
 
 If you want to download and read grib files using ECMWF's `FDB <https://github.com/ecmwf/fdb>`_, you will need to follow specific instructions detailed in ``weathermart/retrievers/fdb-install.md``.

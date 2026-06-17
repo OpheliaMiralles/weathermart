@@ -1,12 +1,67 @@
 Retriever
-=============
+=========
 
-The ``retrievers`` folder of ``weathermart`` contains a series of specific ``Retriever`` objects, designed to fetch data from multiple data sources using an existing API or, when it does not exist, reading data from a local file. If the user wants to add a new data source, they might create a new ``Retriever`` object which should have
-   - a ``retrieve`` method (with multiple custom arguments);
-   - a coordinate reference system ``crs`` attribute under the form of an epsg code or a pyproj string;
-   - a ``sources`` attribute displaying the possible muliple sources accessible with the ``Retriever`` object (for example, the ``NWPRetriever`` can fetch data from COSMO-1E or ICON-CH1-EPS models);
-   - a ``variables`` attribute showing the mapping between source variables and their ICON-CH1-EPS or COSMO-1E counterparts (see https://meteoswiss.atlassian.net/wiki/spaces/Nowcasting/pages/370049179/Data+model+for+output+parameters).
-The ``DataRetriever`` iterates through its ``subretrievers`` attribute to find the right ``Retriever`` object to call for the given source and dates.
+The ``weathermart.retrievers`` package contains concrete ``BaseRetriever``
+implementations for API-backed, MARS/FDB-backed, and local-file-backed data
+sources. New retrievers should expose:
+
+* a ``retrieve`` method;
+* a ``sources`` attribute listing the source identifiers it can serve;
+* a ``variables`` attribute listing the public variable names it accepts;
+* a ``crs`` attribute when the returned data uses a known coordinate reference
+  system.
+
+The ``DataRetriever`` iterates through its configured retrievers and calls the
+first retriever that supports the requested source and variables.
+
+Current built-in retrievers
+---------------------------
+
+.. list-table::
+   :header-rows: 1
+
+   * - Retriever
+     - Sources
+     - Notes
+   * - ``GribRetriever``
+     - configured by file archive
+     - GRIB model archives.
+   * - ``FDBRetriever``
+     - configured by FDB request
+     - ECMWF FDB-backed GRIB retrieval.
+   * - ``OperaRetriever``
+     - ``OPERA``
+     - OPERA radar composites from the MeteoFrance API.
+   * - ``NordicRadarRetriever``
+     - ``NORDIC_RADAR``
+     - Local Nordic radar composites.
+   * - ``EumetsatRetriever``
+     - ``MSG_SEVIRI``, ``METOP``, ``MTG``, ``NOAA``, ``AWS``
+     - EUMETSAT geostationary and polar-orbiting products.
+   * - ``MarsRetriever``
+     - ``MARS``, ``ECMWF_MARS``, ``MARS_GRIB``
+     - ECMWF MARS requests.
+   * - ``MarsODBRetriever``
+     - ``MARS_ODB``, ``ECMWF_ODB``
+     - MARS ODB request files and optional submission.
+   * - ``FrostRetriever``
+     - ``OBSERVATIONS``, ``LIGHTNING``
+     - Frost observations and gridded lightning counts.
+   * - ``NetAtmoRetriever``
+     - ``NETATMO``
+     - Local NetAtmo archive data.
+   * - ``TitanRetriever``
+     - ``TITAN``
+     - Local TITAN Nordic analysis diagnostics.
+   * - ``CEDTMRetriever``
+     - ``CEDTM``
+     - Copernicus DEM tiles.
+   * - ``NASADEMRetriever``
+     - ``NASADEM``
+     - NASADEM tiles.
+   * - ``DHM25Retriever``
+     - ``DHM25``
+     - Swiss DHM25 terrain data.
 
 .. automodule:: weathermart.retrieve
    :members:

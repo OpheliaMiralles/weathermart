@@ -11,10 +11,9 @@ optionally submits them with the local ``mars`` executable.
     retriever = MarsODBRetriever()
     ds = retriever.retrieve(
         source="MARS_ODB",
-        variables=["AMSU-A"],
+        variables=["brightness_temperature", "channel", "reportype"],
+        instruments=["AMSU-A"],
         dates=["2020-01-01"],
         output_dir="mars_odb_requests",
-        reportypes=["21009", "21010"],
         submit=False,
     )
-

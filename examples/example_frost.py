@@ -1,20 +1,22 @@
 import datetime
+import os
 
 import pandas as pd
 
 from weathermart.default_provider import default_provider
 
-p = default_provider()
+CREDENTIALS_PATH = os.environ.get("FROST_CREDENTIALS_PATH", ".frost_credentials.json")
 
 
 def retrieve():
+    provider = default_provider(cache_location=os.environ.get("WEATHERMART_CACHE"))
     for date in pd.date_range("2024-01-10", "2024-01-10", freq="D"):
         try:
             print(f"Retrieving date {date.date()}")
-            start = datetime.datetime.utcnow()
-            data = p.provide(
+            start = datetime.datetime.now(datetime.UTC)
+            data = provider.provide(
                 source="OBSERVATIONS",
-                credentials_path=".frost_credentials.json",
+                credentials_path=CREDENTIALS_PATH,
                 storage_key="frost_example",
                 variables=[
                     "over_time(time_of_maximum_wind_speed PT1H)",
@@ -35,11 +37,12 @@ def retrieve():
                 ],
             )
             print(data)
-            end = datetime.datetime.utcnow()
+            end = datetime.datetime.now(datetime.UTC)
             print(f"Retrieval took {end - start}")
         except Exception as e:
             print(f"Failed retrieving date {date.date()}: {e}")
             continue
-        
+
+
 if __name__ == "__main__":
     retrieve()

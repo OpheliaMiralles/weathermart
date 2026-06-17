@@ -1,110 +1,99 @@
 weathermart: the weather data market
 ====================================
 
-The weathermart package allows to retrieve data from:
+``weathermart`` provides a shared interface for retrieving weather, remote
+sensing, terrain, and observation datasets. Retrievers can be called directly or
+through ``DataProvider``, which checks a local cache before retrieving missing
+data.
 
--  **numerical weather prediction** from FDB and grib files
--  **station observations** via jretrieve (MeteoSwiss/DWD internal but can be mimicked for similar apis)
--  **radar data** from the MeteoFrance's OPERA API
--  **satellite data** from the EUMETSAT API
--  **dem raw products** from various sources via url queries.
+Available retrievers
+--------------------
 
-The retrievers can be accessed *individually* or via the InputProvider,
-where data is *read from a local archive* before trying to retrieve.
-Available variables and their mapping to their original name are listed
-in the “variables” attribute of each retriever. To retrieve data
-(e.g. “U_10M” -originally called “northward_wind”) from a particular
-source (e.g. COSMO-1E) for given dates (e.g. 2021-01-01) you can call:
+.. list-table::
+   :header-rows: 1
 
-.. code:: python
+   * - Retriever
+     - Sources
+     - Description
+   * - ``GribRetriever``
+     - configured by file archive
+     - GRIB data from local model archives.
+   * - ``FDBRetriever``
+     - configured by FDB request
+     - GRIB data from an ECMWF FDB installation.
+   * - ``OperaRetriever``
+     - ``OPERA``
+     - OPERA radar composites from the MeteoFrance API.
+   * - ``NordicRadarRetriever``
+     - ``NORDIC_RADAR``
+     - Local Nordic radar composites.
+   * - ``EumetsatRetriever``
+     - ``MSG_SEVIRI``, ``METOP``, ``MTG``, ``NOAA``, ``AWS``
+     - Geostationary and polar-orbiting EUMETSAT products.
+   * - ``MarsRetriever``
+     - ``MARS``, ``ECMWF_MARS``, ``MARS_GRIB``
+     - ECMWF MARS requests.
+   * - ``MarsODBRetriever``
+     - ``MARS_ODB``, ``ECMWF_ODB``
+     - ECMWF MARS ODB radiance request files and optional submission.
+   * - ``FrostRetriever``
+     - ``OBSERVATIONS``, ``LIGHTNING``
+     - Frost station observations and gridded lightning counts.
+   * - ``NetAtmoRetriever``
+     - ``NETATMO``
+     - Local NetAtmo station archive data.
+   * - ``TitanRetriever``
+     - ``TITAN``
+     - Local TITAN Nordic analysis diagnostics.
+   * - ``CEDTMRetriever``
+     - ``CEDTM``
+     - Copernicus DEM tiles.
+   * - ``NASADEMRetriever``
+     - ``NASADEM``
+     - NASADEM tiles.
+   * - ``DHM25Retriever``
+     - ``DHM25``
+     - Swiss DHM25 terrain data.
 
-   ds = NWPRetriever().retrieve("COSMO-1E", "U_10M", pd.to_datetime("2021-01-01"))
+Examples
+--------
 
-If you want to retrieve data from several data sources (e.g. wind from
-COSMO1E, temperature from station observations) for the same time
-period, you might as well create an DataProvider and perform the
-following steps.
-
-First, setup the desired time period:
-
-.. code:: python
-
-   dates = pd.date_range("20240705", "20240706")
-
-and specific arguments to pass some of the retrievers (NASADEMRetriever
-requires bounds for example):
-
-.. code:: python
-
-   bbox = (2459987.5, 1059987.5, 2850012.5, 1313012.5)
-
-then define the location of the cache if you want to store the data:
-
-.. code:: python
-
-   cache = CacheProvider(cache_path)
-
-and initialise the provider.
-
-.. code:: python
-
-   provider = DataProvider(cache)
-
-You can also use directly the default data provider. It will use by default all of the retrievers to
-request the desired data.
-
-.. code:: python
-
-   from data_provider.default_provider import default_provider
-
-   provider = default_provider()
-
-Finally, describe your request in a dict-like config:
-
-.. code:: python
-
-   config = {
-       "dates": dates,
-       "OPERA": "TOT_PREC",
-       "SATELLITE": "IR_039",
-       "ICON-CH1-EPS": ["U_10M", "V_10M"],
-       "SURFACE": "tre200s0",
-       "NASADEM": "nasadem",
-   }
-
-and call the provider from config:
-
-.. code:: python
-
-   provider.provide_from_config(config, bounds=bbox, target_crs=crs)
-
-An example of a full script retrieving ICON forecasts can be found in
-the `example.py <example.py>`__ file:
+Direct retriever use:
 
 .. code:: python
 
    import pandas as pd
-   import numpy as np
-   from weathermart.default_provider import default_provider
 
-   provider = default_provider()
-   config = {
-       "ICON-CH1-EPS": ["CLCT", "TOT_PREC", "U_10M", "V_10M", "QV_2M", "T_2M", "P", "SP"],
-       "dates": pd.date_range("2023-08-01", "2024-09-09"),
-   }
-   provider.provide_from_config(
-       config, data_type="forecast", ensemble_members=0, step_hours=np.arange(1, 13)
+   from weathermart.retrievers.radar import OperaRetriever
+
+   retriever = OperaRetriever()
+   ds = retriever.retrieve(
+       source="OPERA",
+       variables=["TOT_PREC"],
+       dates=[pd.Timestamp("2024-01-01T12:00:00")],
+       meteofranceapi_token_path=".meteofranceapi_token.json",
    )
 
-The provider will loop through the cache and the retrievers’ available
-sources to get data. It also should save every missing data field in the
-cache.
+Provider use:
 
+.. code:: python
 
-Contributors
-============
-If you'd like to contribute or have any question, please reach out to one of us:
+   import pandas as pd
 
-- Ophélia Miralles @ opheliamiralles@gmail.com
-- Leonard Knirsch @ Leonard.Knirsch@meteoswiss.ch
-- Verena Bessenbacher @ Verena.Bessenbacher@meteoswiss.ch
+   from weathermart.default_provider import default_provider
+
+   provider = default_provider(cache_location="/path/to/cache")
+   config = {
+       "dates": [pd.Timestamp("2024-01-01T12:00:00")],
+       "OPERA": ["TOT_PREC"],
+       "MSG_SEVIRI": ["IR_039"],
+       "NASADEM": ["nasadem"],
+   }
+   ds = provider.provide_from_config(
+       config,
+       bounds=(4.0, 54.0, 32.0, 72.0),
+       target_crs="epsg:4326",
+   )
+
+Use ``cache_location=None`` to disable caching. More examples are available in
+the ``examples/`` directory.

@@ -1,4 +1,5 @@
 import datetime
+import os
 import traceback
 from pathlib import Path
 
@@ -14,7 +15,7 @@ ATMS_CHANNELS = [str(channel) for channel in [*range(6, 16), *range(18, 23)]]
 AWS_CHANNELS = [str(channel) for channel in [*range(4, 9), *range(11, 16)]]
 PLOT_METADATA_VARIABLES = ["latitude", "longitude"]
 
-CREDENTIALS_PATH = ".eumdac_credentials.json"
+CREDENTIALS_PATH = os.environ.get("EUMDAC_CREDENTIALS_PATH", ".eumdac_credentials.json")
 PLOT_DIR = Path("plots/radiance_instruments")
 TEST_MODE = False
 AGGREGATION_WINDOW = "3h"
@@ -26,7 +27,10 @@ REQUESTS = [
         "variables": [*AWS_CHANNELS, *PLOT_METADATA_VARIABLES],
         "bbox": NORTH_LATITUDE_20_BBOX,
         # AWS MWR L1B collection EO:EUM:DAT:0905 starts in 2025, not 2024.
-        "date": [pd.to_datetime("2025-04-11") + pd.Timedelta(hours=hour) for hour in range(0, 24, 3)],
+        "date": [
+            pd.to_datetime("2025-04-11") + pd.Timedelta(hours=hour)
+            for hour in range(0, 24, 3)
+        ],
         "storage_key": "eumetsat_aws_channels_example",
         "plot_var": "4",
         "output": "eumetsat_aws_channel_4_lat_gt_20_polar.png",
@@ -119,7 +123,7 @@ def plot_request(request: dict, ds) -> None:
 
 
 def retrieve() -> None:
-    provider = default_provider()
+    provider = default_provider(cache_location=os.environ.get("WEATHERMART_CACHE"))
     for request in REQUESTS:
         try:
             start = datetime.datetime.now(datetime.UTC)
@@ -141,9 +145,11 @@ def retrieve() -> None:
             print(f"Retrieval took {end - start}")
         except Exception as exc:
             traceback.print_exc()
+            dates = request["date"]
+            first_date = dates[0] if isinstance(dates, list) else dates
             print(
                 f"Failed retrieving {request['source']} "
-                f"{request['product']} for {request['date']:%Y-%m-%d %H:%M}: {exc}"
+                f"{request['product']} from {pd.to_datetime(first_date):%Y-%m-%d %H:%M}: {exc}"
             )
 
 

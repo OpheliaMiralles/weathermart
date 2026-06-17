@@ -14,6 +14,5 @@ Nordic radar template grid at 5 minute resolution.
         variables=["lightning_count"],
         dates=["2024-01-10"],
         credentials_path=".frost_credentials.json",
-        template_path="/lustre/storeB/users/opmir9231/nordic_radar/20250101",
+        template_path="/path/to/nordic_radar_template.zarr",
     )
-

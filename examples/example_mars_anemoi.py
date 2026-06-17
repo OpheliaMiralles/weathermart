@@ -1,10 +1,10 @@
+import os
 from pathlib import Path
 
 from weathermart.retrievers.mars import MarsRetriever
 
-
-retriever = MarsRetriever()
-output_dir = Path("mars_requests_t_700")
+output_dir = Path(os.environ.get("MARS_OUTPUT_DIR", "mars_requests_t_700"))
+rc_credential_path = Path(os.environ.get("ECMWF_API_RC_PATH", ".ecmwfapirc"))
 
 OPER_BASE_REQUEST = {
     "class": "od",
@@ -54,6 +54,7 @@ def structure_requests() -> list[tuple[str, dict, str]]:
 
 
 def retrieve() -> None:
+    retriever = MarsRetriever()
     output_dir.mkdir(parents=True, exist_ok=True)
     parts = structure_requests()
 
@@ -66,7 +67,7 @@ def retrieve() -> None:
             request=request,
             target=part_target,
             output_dir=output_dir,
-            rc_credential_path=Path(".ecmwfapirc"),
+            rc_credential_path=rc_credential_path,
             submit=True,
             request_name=request_name,
             mars_max_queued_requests=20,
