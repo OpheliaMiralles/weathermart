@@ -38,7 +38,7 @@ def available_retrievers() -> Sequence[BaseRetriever]:
     return retrievers
 
 
-def default_provider(cache_location: Path | None = DEFAULT_CACHE) -> DataProvider:
+def default_provider(cache_location: Path | None = None) -> DataProvider:
     """
     Create the default DataProvider with caching.
 
@@ -56,6 +56,13 @@ def default_provider(cache_location: Path | None = DEFAULT_CACHE) -> DataProvide
     DataProvider
         An input data provider instance configured with caching and all retrievers.
     """
+    if cache_location is None:
+        cache_env = os.environ.get("WEATHERMART_CACHE")
+        if cache_env is not None and cache_env.lower() in {"", "0", "false", "none"}:
+            cache_location = None
+        else:
+            cache_location = Path(cache_env) if cache_env is not None else DEFAULT_CACHE
+
     if cache_location:
         cache = CacheRetriever(cache_location)
         logging.warning("Using the cache located at %s.", cache_location)

@@ -42,6 +42,43 @@ QC_LIMITS = {
 }
 
 
+def _json_filename_from_root(
+    root: str | os.PathLike[str],
+    unixtime: int | float,
+    *,
+    max_age_seconds: int = 900,
+) -> Path | None:
+    """Return the newest production Netatmo JSON not newer than unixtime."""
+    timestamp = pd.to_datetime(unixtime, unit="s", utc=True)
+    day_dir = Path(root) / timestamp.strftime("%Y") / timestamp.strftime("%m") / timestamp.strftime("%d")
+    if not day_dir.is_dir():
+        return None
+
+    requested_name = timestamp.strftime("%Y%m%dT%H%M%S") + "Z.json"
+    requested_path = day_dir / requested_name
+    if requested_path.exists():
+        return requested_path
+
+    latest: Path | None = None
+    latest_time: pd.Timestamp | None = None
+    for candidate in sorted(day_dir.glob("*.json")):
+        try:
+            candidate_time = pd.to_datetime(candidate.stem, format="%Y%m%dT%H%M%SZ", utc=True)
+        except ValueError:
+            continue
+        if candidate_time <= timestamp:
+            latest = candidate
+            latest_time = candidate_time
+        else:
+            break
+
+    if latest is None or latest_time is None:
+        return None
+    if (timestamp - latest_time).total_seconds() > max_age_seconds:
+        return None
+    return latest
+
+
 def qc(
     da: xr.DataArray,
     varname: str,
@@ -176,6 +213,8 @@ def get_multi(
     import yrlib
     import yrlib.netatmo
 
+    netatmo_root = os.environ.get("NETATMO_ROOT")
+
     required_unixtimes = set()
     for t in unixtimes:
         required_unixtimes |= {t, t - 600, t + 600}
@@ -185,11 +224,14 @@ def get_multi(
     required_unixtimes = sorted(required_unixtimes)
     filenames = {}
     for t in required_unixtimes:
-        filenames[t] = yrlib.netatmo.get_json_filename(t, datahall)
+        if netatmo_root:
+            filenames[t] = _json_filename_from_root(netatmo_root, t)
+        else:
+            filenames[t] = yrlib.netatmo.get_json_filename(t, datahall)
 
     raw = {}
     for t, fname in filenames.items():
-        if fname is None:
+        if fname is None or not Path(fname).exists():
             continue
         data = read_json_all(fname, latrange, lonrange)
         for loc, payload in data.items():
@@ -386,18 +428,17 @@ class NetAtmoRetriever(BaseRetriever):
     ) -> xr.Dataset:
 
         dates, variables = checktype(dates, variables)
+        requested_times = pd.to_datetime(dates)
+        if requested_times.tz is None:
+            requested_times = requested_times.tz_localize("UTC")
+        else:
+            requested_times = requested_times.tz_convert("UTC")
         varnames_req = list(variables)
-        unique_days = sorted(set(pd.to_datetime(d).date() for d in dates))
+        unique_days = sorted(set(requested_times.date))
 
         day_datasets: list[xr.Dataset] = []
         for d in pd.to_datetime(unique_days).tz_localize("UTC"):
-            times = pd.date_range(
-                d,
-                d + pd.Timedelta(days=1) - pd.Timedelta(minutes=5),
-                freq=freq,
-                inclusive="left",
-                tz="UTC",
-            )
+            times = requested_times[requested_times.date == d.date()]
 
             ds = netatmo_to_xarray_parallel(times, varnames_req)
             if ds is None or len(ds.data_vars) == 0:

@@ -5,6 +5,7 @@ import pandas as pd
 import xarray as xr
 
 from weathermart.retrievers.eumetsat import _centered_time_window
+from weathermart.retrievers.eumetsat import _concat_cell_observations_by_time
 from weathermart.retrievers.eumetsat import _prepare_eumetsat_dataset_time
 
 
@@ -75,3 +76,23 @@ def test_non_granule_time_reader_can_promote_scan_time_to_time() -> None:
     assert "scan" not in prepared.dims
     assert prepared.sizes["time"] == 2
     np.testing.assert_array_equal(prepared["time"].values, scan_time.values)
+
+
+def test_concat_cell_observations_handles_unique_time_label() -> None:
+    ds = xr.Dataset(
+        {
+            "6": (("time", "cell"), np.array([[1.0, 2.0]])),
+            "longitude": (("time", "cell"), np.array([[10.0, 11.0]])),
+            "latitude": (("time", "cell"), np.array([[60.0, 61.0]])),
+        },
+        coords={
+            "time": [np.datetime64("2025-01-01T09:00:00")],
+            "cell": [0, 1],
+        },
+        attrs={"radiance_layout": "mars_odb_like"},
+    )
+
+    out = _concat_cell_observations_by_time(ds)
+
+    assert out.sizes == {"time": 1, "cell": 2}
+    np.testing.assert_allclose(out["6"].isel(time=0).values, [1.0, 2.0])
