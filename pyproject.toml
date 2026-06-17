@@ -20,7 +20,6 @@ dependencies = [
     "wradlib>=2.4.0",
     "xarray>=2025.6.1",
     "zarr>=2.18.3",
-    "yrprod",
     "python-geotiepoints>=1.8.0",
     "ecmwf-api-client>=1.6.5",
     "pyodc>=1.6.0",
@@ -33,10 +32,6 @@ radar = [
 eumetsat = ["satpy", "eumdac", "pyresample"]
 dem = ["rioxarray", "pystac-client", "planetary-computer"]
 grib = ["meteodata-lab>=0.4.0", "earthkit>=0.6.0"]
-netatmo = ["yrprod"]
-
-[tool.uv.sources]
-yrprod = { path = "../yrprod"}
 
 [project.entry-points."weathermart.retriever"]
 GribRetriever = "weathermart.retrievers:GribRetriever"
@@ -46,10 +41,7 @@ DHM25Retriever = "weathermart.retrievers:DHM25Retriever"
 FDBRetriever = "weathermart.retrievers:FDBRetriever"
 OperaRetriever = "weathermart.retrievers:OperaRetriever"
 EumetsatRetriever = "weathermart.retrievers:EumetsatRetriever"
-NetAtmoRetriever = "weathermart.retrievers:NetAtmoRetriever"
 TitanRetriever = "weathermart.retrievers:TitanRetriever"
-NordicRadarRetriever = "weathermart.retrievers:NordicRadarRetriever"
-FrostRetriever = "weathermart.retrievers:FrostRetriever"
 MarsRetriever = "weathermart.retrievers:MarsRetriever"
 MarsODBRetriever = "weathermart.retrievers:MarsODBRetriever"
 

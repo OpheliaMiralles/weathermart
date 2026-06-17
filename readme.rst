@@ -24,9 +24,6 @@ Available retrievers
    * - ``OperaRetriever``
      - ``OPERA``
      - OPERA radar composites from the MeteoFrance API.
-   * - ``NordicRadarRetriever``
-     - ``NORDIC_RADAR``
-     - Local Nordic radar composites.
    * - ``EumetsatRetriever``
      - ``MSG_SEVIRI``, ``METOP``, ``MTG``, ``NOAA``, ``AWS``
      - Geostationary and polar-orbiting EUMETSAT products.
@@ -36,12 +33,6 @@ Available retrievers
    * - ``MarsODBRetriever``
      - ``MARS_ODB``, ``ECMWF_ODB``
      - ECMWF MARS ODB radiance request files and optional submission.
-   * - ``FrostRetriever``
-     - ``OBSERVATIONS``, ``LIGHTNING``
-     - Frost station observations and gridded lightning counts.
-   * - ``NetAtmoRetriever``
-     - ``NETATMO``
-     - Local NetAtmo station archive data.
    * - ``TitanRetriever``
      - ``TITAN``
      - Local TITAN Nordic analysis diagnostics.

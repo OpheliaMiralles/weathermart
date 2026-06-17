@@ -31,7 +31,6 @@ Some retrievers need optional dependencies:
 | OPERA radar API | `radar` | `wradlib` |
 | GRIB files | `grib` | `earthkit`, `meteodata-lab` |
 | DEM products | `dem` | `rioxarray`, `pystac-client`, `planetary-computer` |
-| NetAtmo local archive | `netatmo` | `yrprod` |
 
 The FDB retriever also requires a working ECMWF FDB installation. See
 [`src/weathermart/retrievers/fdb_install.md`](src/weathermart/retrievers/fdb_install.md).
@@ -45,12 +44,9 @@ The currently registered retrievers are:
 | `GribRetriever` | configured by file archive | GRIB data from local model archives. |
 | `FDBRetriever` | configured by FDB request | GRIB data from an ECMWF FDB installation. |
 | `OperaRetriever` | `OPERA` | OPERA radar composites from the MeteoFrance API. |
-| `NordicRadarRetriever` | `NORDIC_RADAR` | Local Nordic radar composites. |
 | `EumetsatRetriever` | `MSG_SEVIRI`, `METOP`, `MTG`, `NOAA`, `AWS` | Geostationary and polar-orbiting EUMETSAT products. |
 | `MarsODBRetriever` | `MARS_ODB`, `ECMWF_ODB` | ECMWF MARS ODB radiance request files and optional submission. |
 | `MarsRetriever` | `MARS`, `ECMWF_MARS`, `MARS_GRIB` | ECMWF MARS requests. |
-| `FrostRetriever` | `OBSERVATIONS`, `LIGHTNING` | Frost station observations and gridded lightning counts. |
-| `NetAtmoRetriever` | `NETATMO` | Local NetAtmo station archive data. |
 | `TitanRetriever` | `TITAN` | Local TITAN Nordic analysis diagnostics. |
 | `CEDTMRetriever` | `CEDTM` | Copernicus DEM tiles. |
 | `NASADEMRetriever` | `NASADEM` | NASADEM tiles. |
