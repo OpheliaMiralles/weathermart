@@ -26,7 +26,7 @@ def retrieve():
                 variables=["RAINFALL_RATE", "qc_flags"],
                 dates=[pd.to_datetime(date)],
                 meteofranceapi_token_path=TOKEN_PATH,
-                storage_key="",
+                storage_key="test",
             )
             print(data)
             end = datetime.datetime.now(datetime.UTC)

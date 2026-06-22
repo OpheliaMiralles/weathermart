@@ -95,6 +95,16 @@ def read_radar_file_or_raise(file: os.PathLike) -> Any:
         raise RuntimeError(f"File {file} does not exist.", e)
 
 
+def _ensure_time_coord_metadata(ds: xr.Dataset) -> xr.Dataset:
+    """Stamp time coordinates with CF-style metadata for xarray-based consumers."""
+    if "time" in ds.coords:
+        ds = ds.copy()
+        ds["time"].attrs.setdefault("standard_name", "time")
+        ds["time"].attrs.setdefault("axis", "T")
+        ds["time"].attrs.setdefault("long_name", "time")
+    return ds
+
+
 class OperaRetriever(BaseRetriever):
     """
     Class for retrieving and processing Opera radar data from the MeteoFrance API.
@@ -246,6 +256,7 @@ class OperaRetriever(BaseRetriever):
                 "time": [timestamp],
             },
         )
+        ds = _ensure_time_coord_metadata(ds)
         ds = assign_latlon_coords(ds, crs=self.crs)
         ds["qc_flags"].attrs["qc_flags_description"] = (
             "Bit 0: is_nodata, Bit 1: is_extreme, Bit 3: is_invalid"
@@ -527,10 +538,10 @@ class NordicRadarRetriever(BaseRetriever):
         9: "extreme_20_50",
         10: "invalid_high_gt50",
     }
-    ROOT = "/lustre/storeB/project/remotesensing/radar/reflectivity-nordic"
+    ROOT = "/lustre/metproductionB/products/nordrad/netcdf-yr"
     FILE_TEMPLATE = [
-        "yrwms-nordic.mos.pcappi-0-dbz.noclass-clfilter-novpr-clcorr-block.nordiclcc-1000.{date}*.nc",
-        "yrwms-nordic.mos.pcappi-0-dbz.noclass-clfilter-novpr-clcorr-block.laea-yrwms-1000.{date}*.nc",
+        "yrwms-nordic.mos.pcappi-dbz.noclass-clfilter-novpr-clcorr-block.nordiclcc.{date}*.nc",
+        "yrwms-nordic.mos.pcappi-dbz.noclass-clfilter-novpr-clcorr-block.laea-yrwms.{date}*.nc",
     ]
     crs = {
         "lcc": "+proj=lcc +lat_0=63.3 +lon_0=15 \
@@ -610,11 +621,9 @@ class NordicRadarRetriever(BaseRetriever):
         for day in unique_days:
             day = pd.Timestamp(day, tz="UTC")
 
-            year = day.strftime("%Y")
-            month = day.strftime("%m")
             ymd = day.strftime("%Y%m%d")
-            day_dir = pathlib.Path(self.ROOT) / year / month
-            candidates = [day_dir / t.format(date=ymd) for t in self.FILE_TEMPLATE]
+            root = pathlib.Path(self.ROOT)
+            candidates = [root / t.format(date=ymd) for t in self.FILE_TEMPLATE]
             fpath = next(
                 (glob(str(p)) for p in candidates if len(glob(str(p))) > 0), None
             )
@@ -653,20 +662,23 @@ class NordicRadarRetriever(BaseRetriever):
                 var_list = list(set(var_list))
             ds.attrs["source"] = source
             ds = ds.chunk({"time": 24, "Yc": 748, "Xc": 689})
+            ds = _ensure_time_coord_metadata(ds)
             datasets.append(ds[[v for v in var_list if v in ds.variables]])
 
         if not datasets:
             return xr.Dataset()
 
         if len(datasets) == 1:
-            return datasets[0]
+            return _ensure_time_coord_metadata(datasets[0])
 
-        return xr.concat(
-            datasets,
-            dim="time",
-            join="outer",
-            compat="no_conflicts",
-            coords="minimal",
+        return _ensure_time_coord_metadata(
+            xr.concat(
+                datasets,
+                dim="time",
+                join="outer",
+                compat="no_conflicts",
+                coords="minimal",
+            )
         )
 
 
