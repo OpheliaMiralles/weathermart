@@ -22,6 +22,7 @@ def retrieve():
                 variables=["lwe_precipitation_rate", "qc_flags"],
                 dates=[pd.to_datetime(date)],
                 dense_qc=True,
+                endpoint="archive",
                 test=True,
                 storage_key="start_2020_example",
             )

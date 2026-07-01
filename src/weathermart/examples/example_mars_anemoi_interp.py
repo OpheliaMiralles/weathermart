@@ -4,47 +4,42 @@ from pathlib import Path
 from weathermart.retrievers.mars import MarsRetriever
 
 output_dir = Path(
-    os.environ.get("MARS_OUTPUT_DIR", "mars_requests_ifs_oper_fc_20251003T12")
+    os.environ.get("MARS_OUTPUT_DIR", "mars_requests_rd_enfo_anemoi_20251003T00")
 )
-rc_credential_path = Path(os.environ.get("ECMWF_API_RC_PATH", "/home/opmir9231/weathermart/.ecmwfapirc"))
+rc_credential_path = Path(
+    os.environ.get("ECMWF_API_RC_PATH", "/home/opmir9231/weathermart/.ecmwfapirc")
+)
 
-REFERENCE_DATE = "2025-10-03"
-REFERENCE_TIME = "12"
-HOURLY_STEPS_TO_20251004_06 = "0/to/18/by/1"
-LAT_LON_GRID = os.environ.get("MARS_LAT_LON_GRID", "0.25/0.25")
-
-OPER_FORECAST_BASE_REQUEST = {
-    "class": "od",
-    "expver": "1",
-    "stream": "oper",
-    "type": "fc",
-    "date": REFERENCE_DATE,
-    "time": REFERENCE_TIME,
-    "step": HOURLY_STEPS_TO_20251004_06,
-    "grid": LAT_LON_GRID,
-    "resol": "av",
+BASE_REQUEST = {
+    "class": "rd",
+    "date": "2025-10-03",
+    "expver": "j4s4",
+    "step": "1/to/96/by/1",
+    "stream": "enfo",
+    "number": "1/to/10",
+    "time": "00:00:00",
+    "type": "pf",
 }
-
 
 REQUESTS = [
     (
-        "ifs_850_forecast_20251003T12_0_to_18",
+        "rd_enfo_uv850_pf_20251003T00_members_1_to_10_steps_1_to_96",
         {
-            **OPER_FORECAST_BASE_REQUEST,
+            **BASE_REQUEST,
             "levelist": "850",
             "levtype": "pl",
             "param": ["131", "132"],
         },
-        "ifs_850_forecast_20251003T12_0_to_18.grib",
+        "rd_enfo_uv850_pf_20251003T00_members_1_to_10_steps_1_to_96.grib",
     ),
     (
-        "ifs_surface_forecast_20251003T12_0_to_18",
+        "rd_enfo_tp_mslp_pf_20251003T00_members_1_to_10_steps_1_to_96",
         {
-            **OPER_FORECAST_BASE_REQUEST,
+            **BASE_REQUEST,
             "levtype": "sfc",
-            "param": "151",
+            "param": ["tp", "151"],
         },
-        "ifs_surface_forecast_20251003T12_0_to_18.grib",
+        "rd_enfo_tp_mslp_pf_20251003T00_members_1_to_10_steps_1_to_96.grib",
     ),
 ]
 

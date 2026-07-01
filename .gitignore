@@ -21,8 +21,9 @@ uv.lock
 .ecmwfapirc
 
 #jobs
-run*.sh
-submit*.sh
+*.sh
+#!run_iasi_month.sh
+#!submit_iasi_2020_2021.sh
 logs
 *.csv
 
@@ -38,6 +39,8 @@ mars_requests*
 *.odb
 *.zarr
 mars_all.py
+opera_bris.py
+iasi_all.py
 .vscode
 .agents
 .codex

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-WEATHERMART_ROOT="$(pwd -P)"
+WEATHERMART_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 VENV_DIR="$WEATHERMART_ROOT/.venv"
 ACTIVATE_SCRIPT="$VENV_DIR/bin/activate"
 # install uv
@@ -11,6 +11,8 @@ echo "Activating venv..."
 source "$ACTIVATE_SCRIPT"
 echo "Python version:"
 python --version
+echo "Removing unrelated PyPI coda package if present..."
+python -m pip uninstall -y coda || true
 mkdir -p ~/software
 cd ~/software
 mkdir -p coda
@@ -36,6 +38,8 @@ make install
 echo "Installing CODA Python into venv..."
 echo "$CODA_PREFIX/lib/python3.12/site-packages" \
     > $VENV_DIR/lib/python3.12/site-packages/coda_path.pth
+echo "Verifying CODA Python bindings..."
+python -c "import coda; print(coda.__file__); assert hasattr(coda, 'open')"
 
 cd ~/software
 mkdir -p harp
@@ -52,46 +56,6 @@ export LD_LIBRARY_PATH="$CODA_HOME/lib:$LD_LIBRARY_PATH"
 export CODA_DEFINITION="$CODA_HOME/share/coda/definitions"
 export CODA_DEFINITION=$HOME/software/harp/harp-1.29/definitions:$CODA_DEFINITION
 EOF
-cd $WEATHERMART_ROOT
-deactivate
-source "$ACTIVATE_SCRIPT"
-
-echo "Setting up optional ECMWF MARS client layout..."
-chmod +x "$WEATHERMART_ROOT/scripts/setup_mars.sh"
-"$WEATHERMART_ROOT/scripts/setup_mars.sh"
-cat <<'EOF'
-
-============================================================
-Optional ECMWF MARS setup
-============================================================
-
-This client is a Web API interface. It forwards requests to ECMWF and expects
-a single output file. It does not run the internal ECMWF MIR/ecCodes stack
-locally; those operations happen on ECMWF servers.
-
-It is supported on UNIX systems and requires Python.
-
-Recommended layout:
-  mkdir -p ~/mars/bin
-  mkdir -p ~/mars/lib
-
-The installer writes the MARS launcher to:
-  ~/mars/bin/mars
-
-Add it to PATH:
-  export PATH=~/mars/bin/:$PATH
-
-ECMWF credentials:
-  Place your API credentials in ~/.ecmwfapirc
-  Or point to a custom file with ECMWF_API_RC_FILE=/path/to/.ecmwfapirc
-  The file should be kept out of git and remain local to your machine.
-
-Test installation:
-  mars < request.inp
-
-If you are using the retriever in this repo, set submit=True only after the
-`mars` command works on the shell and `~/.ecmwfapirc` is valid.
-
-============================================================
-EOF
-echo "Done!"
+cd "$WEATHERMART_ROOT"
+echo "Done! Activate the environment in your shell with:"
+echo "source $ACTIVATE_SCRIPT"

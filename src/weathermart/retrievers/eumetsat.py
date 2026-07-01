@@ -451,6 +451,7 @@ def _flatten_non_time_dims_to_cell(
     array: xr.DataArray,
     *,
     output_dim: str = "cell",
+    create_index: bool = True,
 ) -> xr.DataArray:
     """Flatten all non-time dimensions to an observation/cell dimension.
 
@@ -469,6 +470,13 @@ def _flatten_non_time_dims_to_cell(
             sample_dim = f"_{sample_dim}"
         array = array.rename({output_dim: sample_dim})
         stack_dims = [sample_dim if dim == output_dim else dim for dim in stack_dims]
+
+    if not create_index:
+        array = array.drop_vars(
+            [dim for dim in stack_dims if dim in array.coords],
+            errors="ignore",
+        )
+        return array.stack({output_dim: stack_dims}, create_index=False)
 
     return array.stack({output_dim: stack_dims}).reset_index(output_dim)
 
@@ -492,7 +500,7 @@ def _stack_dataarray_like_brightness_temperature(
         )
     dims = [dim for dim in reference_dims if dim in expanded.dims]
     expanded = expanded.transpose(*dims)
-    return _flatten_non_time_dims_to_cell(expanded)
+    return _flatten_non_time_dims_to_cell(expanded, create_index=False)
 
 
 def _stack_radiance_channels_as_observations(
@@ -548,7 +556,10 @@ def _stack_radiance_channels_as_observations(
         dim for dim in sample_dims if dim in stacked_channels.dims
     ) + ("_radiance_channel",)
     stacked_channels = stacked_channels.transpose(*reference_dims)
-    brightness_temperature = _flatten_non_time_dims_to_cell(stacked_channels)
+    brightness_temperature = _flatten_non_time_dims_to_cell(
+        stacked_channels,
+        create_index=False,
+    )
 
     out = xr.Dataset(
         {output_name: brightness_temperature.reset_coords(drop=True)},
@@ -581,7 +592,7 @@ def _stack_radiance_channels_as_observations(
         template = xr.zeros_like(stacked_channels, dtype=np.int32) + stacked_channels[
             "_radiance_channel"
         ].astype(np.int32)
-        channel = _flatten_non_time_dims_to_cell(template)
+        channel = _flatten_non_time_dims_to_cell(template, create_index=False)
     out["channel"] = channel.reset_coords(drop=True)
     out["channel"].attrs.update(
         {
@@ -629,7 +640,7 @@ def _stack_radiance_channels_as_observations(
         if coord_name in brightness_temperature.coords and coord_name not in out:
             out[coord_name] = brightness_temperature[coord_name].reset_coords(drop=True)
 
-    out = out.assign_coords(cell=np.arange(out.sizes["cell"], dtype=np.int64))
+    out = out.assign_coords(cell=np.arange(out.sizes["cell"], dtype=np.int32))
     out.attrs["radiance_layout"] = "mars_odb_like"
     out.attrs["radiance_instrument"] = instrument
     return out
@@ -665,6 +676,59 @@ def _concat_cell_observations_by_time(ds: xr.Dataset) -> xr.Dataset:
         return ds.isel(time=slice(0, 0))
     out = xr.concat(groups, dim="time", join="outer")
     out.attrs.update(ds.attrs)
+    return out
+
+
+def _aggregate_cell_observation_granules(
+    datasets: list[xr.Dataset],
+    aggregation_window: str | None,
+) -> xr.Dataset:
+    """
+    Aggregate MARS-ODB-like granule datasets without first building a dense
+    raw-granule-time by cell array.
+    """
+    grouped: dict[pd.Timestamp, list[xr.Dataset]] = {}
+    for ds in datasets:
+        if "time" not in ds.coords:
+            continue
+        time_values = pd.to_datetime(ds["time"].values)
+        if len(time_values) == 0:
+            continue
+        center = _time_window_centers([time_values[0]], aggregation_window)[0]
+        if "time" in ds.dims:
+            if ds.sizes.get("time", 0) != 1:
+                ds = _concat_cell_observations_by_time(ds)
+                ds = ds.isel(time=0, drop=True)
+            else:
+                ds = ds.isel(time=0, drop=True)
+        else:
+            ds = ds.drop_vars("time", errors="ignore")
+        grouped.setdefault(pd.Timestamp(center), []).append(ds)
+
+    groups: list[xr.Dataset] = []
+    for center, members in sorted(grouped.items()):
+        normalized = [
+            member.assign_coords(
+                cell=np.arange(member.sizes["cell"], dtype=np.int64)
+            )
+            for member in members
+        ]
+        combined = xr.concat(
+            normalized,
+            dim="cell",
+            coords="minimal",
+            compat="override",
+            join="override",
+        )
+        combined = combined.assign_coords(
+            cell=np.arange(combined.sizes["cell"], dtype=np.int64)
+        )
+        groups.append(combined.expand_dims(time=[center]))
+
+    if not groups:
+        return xr.Dataset()
+    out = xr.concat(groups, dim="time", join="outer")
+    out.attrs.update(datasets[0].attrs)
     return out
 
 
@@ -876,6 +940,10 @@ class EumetsatRetriever(BaseRetriever):
             k: v for k, v in EUMETSAT_SOURCES[source].items() if k != "products"
         }
         resolution = resolution or EUMETSAT_SOURCES[source].get("native_res", None)
+        if resolution is None and len(product_names) == 1:
+            resolution = EUMETSAT_SOURCES[source]["products"][product_names[0]].get(
+                "native_res"
+            )
         if resample and resolution is None:
             raise RuntimeError(
                 "No resolution specified and no consistent native_res known for this source."
@@ -1080,6 +1148,7 @@ class EumetsatRetriever(BaseRetriever):
             return datasets
 
         all_ds = []
+        cell_observations_aggregated = False
         for prod_name in product_names:
             product_cfg = EUMETSAT_SOURCES[source]["products"][prod_name]
             metadata.update({k: v for k, v in product_cfg.items() if k != "variables"})
@@ -1166,7 +1235,20 @@ class EumetsatRetriever(BaseRetriever):
             if products_to_process:
                 ds_list = process_products(products_to_process)
                 if ds_list:
-                    all_ds.append(xr.concat(ds_list, dim="time", join="outer"))
+                    if (
+                        aggregate_time
+                        and ds_list[0].attrs.get("radiance_layout")
+                        == "mars_odb_like"
+                        and "cell" in ds_list[0].dims
+                    ):
+                        all_ds.append(
+                            _aggregate_cell_observation_granules(
+                                ds_list, aggregation_window
+                            )
+                        )
+                        cell_observations_aggregated = True
+                    else:
+                        all_ds.append(xr.concat(ds_list, dim="time", join="outer"))
 
             if not all_ds:
                 return xr.Dataset()
@@ -1174,17 +1256,23 @@ class EumetsatRetriever(BaseRetriever):
         ds = xr.concat(all_ds, dim="time").sortby("time")
         ds = ds.assign_attrs(metadata)
         if aggregate_time:
-            print(ds.time.values)
-            ds = ds.assign_coords(
-                time=_time_window_centers(ds["time"].values, aggregation_window)
-            )
-            if ds.attrs.get("radiance_layout") == "mars_odb_like" and "cell" in ds.dims:
+            if cell_observations_aggregated:
+                ds = ds.sel(time=dates)
+            elif (
+                ds.attrs.get("radiance_layout") == "mars_odb_like"
+                and "cell" in ds.dims
+            ):
+                ds = ds.assign_coords(
+                    time=_time_window_centers(ds["time"].values, aggregation_window)
+                )
                 ds = _concat_cell_observations_by_time(ds).sel(time=dates)
             else:
+                ds = ds.assign_coords(
+                    time=_time_window_centers(ds["time"].values, aggregation_window)
+                )
                 ds = ds.groupby("time").mean(
                     skipna=True
                 )  # .sel(time=dates, method="nearest")
-                print(ds.time.values)
         ds["time"] = pd.to_datetime(ds["time"].values).tz_localize(None)
         ds = _sanitize_dataset_for_zarr(ds)
         return ds
@@ -1496,7 +1584,7 @@ def iasi_metop_to_xarray(
         for name, values in selected_values.items():
             grid = resample_nearest(
                 swath,
-                values,
+                values.astype(np.float32),
                 area,
                 radius_of_influence=radius_of_influence,
                 fill_value=np.nan,
@@ -1599,7 +1687,33 @@ def plot_polar(
     ax.coastlines(linewidth=0.8)
     # ax.set_extent([xmin, xmax, ymin, ymax], crs=proj)
     ax.set_extent([xmin - dx, xmax + dx, ymin - dy, ymax + dy], crs=proj)
-    pm = ax.scatter(x, y, c=val, transform=proj, cmap="viridis", s=10)
+    if val.size > 1_000_000:
+        bins = 1200
+        value_sum, x_edges, y_edges = np.histogram2d(
+            x,
+            y,
+            bins=bins,
+            range=[[xmin, xmax], [ymin, ymax]],
+            weights=val,
+        )
+        count, _, _ = np.histogram2d(
+            x,
+            y,
+            bins=[x_edges, y_edges],
+        )
+        with np.errstate(invalid="ignore", divide="ignore"):
+            grid = value_sum / count
+        grid = np.ma.masked_invalid(grid.T)
+        pm = ax.imshow(
+            grid,
+            origin="lower",
+            extent=[xmin, xmax, ymin, ymax],
+            transform=proj,
+            cmap="viridis",
+            interpolation="nearest",
+        )
+    else:
+        pm = ax.scatter(x, y, c=val, transform=proj, cmap="viridis", s=10)
     plt.colorbar(pm, ax=ax, shrink=0.7)
     plot_title = title or ds[var].attrs.get("long_name") or str(var)
     time_label = f"{pd.to_datetime(t):%Y-%m-%d %H:%M}"

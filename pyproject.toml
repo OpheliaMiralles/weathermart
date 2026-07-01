@@ -23,6 +23,7 @@ dependencies = [
     "python-geotiepoints>=1.8.0",
     "ecmwf-api-client>=1.6.5",
     "pyodc>=1.6.0",
+    "yrprod",
 ]
 
 [project.optional-dependencies]
@@ -61,3 +62,14 @@ extend-select = ["I", "UP"]
 
 [tool.ruff.lint.isort]
 force-single-line = true
+
+[tool.uv]
+constraint-dependencies = [
+    "pyqt6<6.10",
+]
+required-environments = [
+    "sys_platform == 'linux' and platform_machine == 'x86_64'",
+]
+
+[tool.uv.sources]
+yrprod = { git = "https://gitlab.met.no/yrop/yrprod.git", branch = "master" }

@@ -5,8 +5,10 @@ import pandas as pd
 import xarray as xr
 
 from weathermart.retrievers.eumetsat import _centered_time_window
+from weathermart.retrievers.eumetsat import _aggregate_cell_observation_granules
 from weathermart.retrievers.eumetsat import _concat_cell_observations_by_time
 from weathermart.retrievers.eumetsat import _prepare_eumetsat_dataset_time
+from weathermart.retrievers.eumetsat import _stack_radiance_channels_as_observations
 
 
 def test_centered_time_window_uses_half_aggregation_window() -> None:
@@ -96,3 +98,104 @@ def test_concat_cell_observations_handles_unique_time_label() -> None:
 
     assert out.sizes == {"time": 1, "cell": 2}
     np.testing.assert_allclose(out["6"].isel(time=0).values, [1.0, 2.0])
+
+
+def test_aggregate_cell_observation_granules_concatenates_before_time_concat() -> None:
+    first = xr.Dataset(
+        {
+            "spectral_radiance": (
+                ("time", "cell"),
+                np.array([[1.0, 2.0]], dtype=np.float32),
+            ),
+            "scan_time": (
+                ("time", "cell"),
+                np.array(
+                    [
+                        [
+                            np.datetime64("2025-01-01T00:01:00"),
+                            np.datetime64("2025-01-01T00:02:00"),
+                        ]
+                    ]
+                ),
+            ),
+        },
+        coords={
+            "time": [np.datetime64("2025-01-01T00:10:00")],
+            "cell": [0, 1],
+        },
+        attrs={"radiance_layout": "mars_odb_like"},
+    )
+    second = xr.Dataset(
+        {
+            "spectral_radiance": (
+                ("time", "cell"),
+                np.array([[3.0, 4.0, 5.0]], dtype=np.float32),
+            ),
+            "scan_time": (
+                ("time", "cell"),
+                np.array(
+                    [
+                        [
+                            np.datetime64("2025-01-01T00:03:00"),
+                            np.datetime64("2025-01-01T00:04:00"),
+                            np.datetime64("2025-01-01T00:05:00"),
+                        ]
+                    ]
+                ),
+            ),
+        },
+        coords={
+            "time": [np.datetime64("2025-01-01T00:40:00")],
+            "cell": [0, 1, 2],
+        },
+        attrs={"radiance_layout": "mars_odb_like"},
+    )
+
+    out = _aggregate_cell_observation_granules([first, second], "3h")
+
+    assert out.sizes == {"time": 1, "cell": 5}
+    np.testing.assert_allclose(
+        out["spectral_radiance"].isel(time=0).values,
+        [1.0, 2.0, 3.0, 4.0, 5.0],
+    )
+    np.testing.assert_array_equal(
+        out["scan_time"].isel(time=0).values,
+        np.array(
+            [
+                np.datetime64("2025-01-01T00:01:00"),
+                np.datetime64("2025-01-01T00:02:00"),
+                np.datetime64("2025-01-01T00:03:00"),
+                np.datetime64("2025-01-01T00:04:00"),
+                np.datetime64("2025-01-01T00:05:00"),
+            ]
+        ),
+    )
+
+
+def test_stack_radiance_channels_avoids_stack_coordinate_temporaries() -> None:
+    ds = xr.Dataset(
+        {
+            "38": ("cell", np.array([1.0, 2.0], dtype=np.float32)),
+            "49": ("cell", np.array([10.0, 20.0], dtype=np.float32)),
+            "latitude": ("cell", np.array([60.0, 61.0], dtype=np.float32)),
+            "longitude": ("cell", np.array([5.0, 6.0], dtype=np.float32)),
+        },
+        coords={"cell": np.array([0, 1], dtype=np.int32)},
+    )
+
+    out = _stack_radiance_channels_as_observations(
+        ds,
+        ["38", "49"],
+        instrument="IASI",
+        output_name="spectral_radiance",
+    )
+
+    assert out.sizes == {"cell": 4}
+    assert set(out.coords) == {"cell"}
+    assert out["cell"].dtype == np.int32
+    np.testing.assert_allclose(
+        out["spectral_radiance"].values,
+        [1.0, 10.0, 2.0, 20.0],
+    )
+    np.testing.assert_array_equal(out["channel"].values, [38, 49, 38, 49])
+    np.testing.assert_allclose(out["latitude"].values, [60.0, 60.0, 61.0, 61.0])

@@ -538,11 +538,18 @@ class NordicRadarRetriever(BaseRetriever):
         9: "extreme_20_50",
         10: "invalid_high_gt50",
     }
-    ROOT = "/lustre/metproductionB/products/nordrad/netcdf-yr"
-    FILE_TEMPLATE = [
+    PROD_ROOT = "/lustre/metproductionB/products/nordrad/netcdf-yr"
+    PROD_FILE_TEMPLATE = [
         "yrwms-nordic.mos.pcappi-dbz.noclass-clfilter-novpr-clcorr-block.nordiclcc.{date}*.nc",
         "yrwms-nordic.mos.pcappi-dbz.noclass-clfilter-novpr-clcorr-block.laea-yrwms.{date}*.nc",
     ]
+    ARCHIVE_ROOT = "/lustre/storeB/project/remotesensing/radar/reflectivity-nordic"
+    ARCHIVE_FILE_TEMPLATE = [
+        "yrwms-nordic.mos.pcappi-0-dbz.noclass-clfilter-novpr-clcorr-block.nordiclcc-1000.{date}*.nc",
+        "yrwms-nordic.mos.pcappi-0-dbz.noclass-clfilter-novpr-clcorr-block.laea-yrwms-1000.{date}*.nc",
+    ]
+    ROOT = PROD_ROOT
+    FILE_TEMPLATE = PROD_FILE_TEMPLATE
     crs = {
         "lcc": "+proj=lcc +lat_0=63.3 +lon_0=15 \
             +lat_1=63.3 +lat_2=63.3 \
@@ -550,6 +557,34 @@ class NordicRadarRetriever(BaseRetriever):
             +x_0=0 +y_0=0 +units=m +no_defs",
         "laea": "+proj=laea +lat_0=63.3 +lon_0=15 +a=6371000 +b=6371000 +x_0=0 +y_0=0 +units=m +no_defs",
     }
+
+    def _get_file_patterns(
+        self, day: pd.Timestamp, endpoint: str
+    ) -> tuple[list[pathlib.Path], str]:
+        endpoint = endpoint.lower()
+        ymd = day.strftime("%Y%m%d")
+
+        if endpoint in {"prod", "production"}:
+            root = pathlib.Path(self.PROD_ROOT)
+            return [root / t.format(date=ymd) for t in self.PROD_FILE_TEMPLATE], "prod"
+
+        if endpoint == "archive":
+            root = pathlib.Path(self.ARCHIVE_ROOT) / day.strftime("%Y") / day.strftime(
+                "%m"
+            )
+            return [
+                root / t.format(date=ymd) for t in self.ARCHIVE_FILE_TEMPLATE
+            ], "archive"
+
+        raise ValueError("endpoint must be one of 'prod', 'production', or 'archive'")
+
+    def _open_files(self, files: list[str]) -> xr.Dataset:
+        datasets = [
+            xr.open_dataset(f, chunks={"time": 1}, engine="netcdf4") for f in files
+        ]
+        if len(datasets) == 1:
+            return datasets[0]
+        return xr.concat(datasets, dim="time")
 
     def build_qc_flags(self, ds: xr.Dataset) -> xr.Dataset:
         qc = xr.zeros_like(ds[self.flags[0]], dtype="uint16")
@@ -609,9 +644,16 @@ class NordicRadarRetriever(BaseRetriever):
         dates: datetime.date | str | pd.Timestamp | list[Any],
         dense_qc: bool = True,
         test: bool = False,
+        endpoint: str = "prod",
     ) -> xr.Dataset:
         """
         Read 5-min radar files and return daily xarray datasets.
+
+        Parameters
+        ----------
+        endpoint : {"prod", "archive"}, default "prod"
+            Use the operational production directory by default. Use "archive" for
+            historical daily files under the remotesensing radar archive.
         """
         dates, variables = checktype(dates, variables)
         unique_days = sorted(set(pd.to_datetime(d).date() for d in dates))
@@ -621,22 +663,21 @@ class NordicRadarRetriever(BaseRetriever):
         for day in unique_days:
             day = pd.Timestamp(day, tz="UTC")
 
-            ymd = day.strftime("%Y%m%d")
-            root = pathlib.Path(self.ROOT)
-            candidates = [root / t.format(date=ymd) for t in self.FILE_TEMPLATE]
+            candidates, resolved_endpoint = self._get_file_patterns(day, endpoint)
             fpath = next(
                 (glob(str(p)) for p in candidates if len(glob(str(p))) > 0), None
             )
 
             if fpath is None:
-                logging.warning("Missing radar file: %s", fpath)
+                logging.warning(
+                    "Missing radar file for %s endpoint. Tried: %s",
+                    resolved_endpoint,
+                    candidates,
+                )
                 continue
 
             logging.info("Reading radar file %s", fpath)
-            ds_list = [
-                xr.open_dataset(f, chunks={"time": 1}, engine="netcdf4") for f in fpath
-            ]
-            ds = xr.concat(ds_list, dim="time")
+            ds = self._open_files(fpath)
             if test:
                 ds = ds.isel(time=slice(0, 3))
             if ds.time.dtype == np.int32:
@@ -661,6 +702,7 @@ class NordicRadarRetriever(BaseRetriever):
                 var_list.append("qc_flags")
                 var_list = list(set(var_list))
             ds.attrs["source"] = source
+            ds.attrs["endpoint"] = resolved_endpoint
             ds = ds.chunk({"time": 24, "Yc": 748, "Xc": 689})
             ds = _ensure_time_coord_metadata(ds)
             datasets.append(ds[[v for v in var_list if v in ds.variables]])

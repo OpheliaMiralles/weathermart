@@ -31,6 +31,26 @@ def chunk_data(data: xr.DataArray | xr.Dataset) -> Any:
     return data
 
 
+def _prepare_for_zarr(data: xr.Dataset) -> xr.Dataset:
+    data = data.copy(deep=False)
+    for variable in data.data_vars:
+        data[variable].encoding.clear()
+        if "metadata" in data[variable].attrs:
+            logging.warning(
+                "WrappedMetaData object from earthkit found in xarray attributes "
+                "for %s. Removing it to save in zarr format.",
+                variable,
+            )
+            data[variable].attrs.pop("metadata")
+    return data
+
+
+def _chmod_tree(path: pathlib.Path, mode: int) -> None:
+    path.chmod(mode)
+    for child in path.rglob("*"):
+        child.chmod(mode)
+
+
 class CacheRetriever:
     """
     Provides caching functionality for retrieved data.
@@ -179,68 +199,55 @@ class CacheRetriever:
         """
         if self.__read_only:
             raise PermissionError(f"Cache directory {str(self.path)} is read-only.")
-        dates, variables = checktype(dates, variables)
-        for variable in data.data_vars:
-            data[variable].encoding.clear()
-            source_path = self.path / f"{source.lower()}{kwargs_str}"
-            if not source_path.exists():
-                source_path.mkdir()
-                source_path.chmod(0o2777)
-            if is_static:
-                # date irrelevant
-                p = self.path / f"{source.lower()}{kwargs_str}/{variable}"
-                p.mkdir(parents=True, exist_ok=True, mode=0o2775)
-                logging.warning(
-                    "Saving cache for %s %s (static) at %s", source, variable, p
-                )
-                data[variable].to_zarr(str(p.parent), mode="a")
-                os.system(f"chmod -R 2777 {p.parent}")
-            else:
-                for date in dates:
-                    day_start = pd.to_datetime(date)
-                    day_end = pd.to_datetime(day_start + pd.to_timedelta("23h59m"))
-                    date_str = date.strftime("%Y%m%d")
-                    p = (
-                        self.path
-                        / f"{source.lower()}{kwargs_str}/{date_str}/{variable}"
-                    )
-                    p.parent.mkdir(parents=True, exist_ok=True, mode=0o2775)
-                    logging.warning(
-                        "Saving cache for %s %s on %s at %s",
-                        source,
-                        variable,
-                        date,
-                        p.parent,
-                    )
-                    xa = data[variable]
-                    if "metadata" in xa.attrs:
-                        logging.warning(
-                            "WrappedMetaData object from earthkit found in xarray attributes for %s %s on %s. Removing it to save in zarr format.",
-                            source,
-                            variable,
-                            date,
-                        )
-                        xa.attrs.pop("metadata")  # weird earthkit metadata object
+        dates, _ = checktype(dates, variables)
+        data = _prepare_for_zarr(data)
+        source_path = self.path / f"{source.lower()}{kwargs_str}"
+        if not source_path.exists():
+            source_path.mkdir()
+            source_path.chmod(0o2777)
 
-                    unique_time_dim = (
-                        "time" if "time" in data.dims else "forecast_reference_time"
-                    )
-                    # time should always exist, either observation time or validity time of a forecast
-                    if len(set(data[unique_time_dim].data)) != len(
-                        data[unique_time_dim].data
-                    ):
-                        logging.info("Saving time with duplicated values")
-                    valid_datetimes = sorted(
-                        [
-                            datetime
-                            for datetime in set(data[unique_time_dim].data)
-                            if day_start <= datetime <= day_end
-                        ]
-                    )
-                    xa = xa.sel({unique_time_dim: valid_datetimes})
-                    xa = chunk_data(xa)
-                    xa.to_zarr(str(p.parent), mode="a")
-                    os.system(f"chmod -R 2777 {p.parent}")
+        if is_static:
+            p = self.path / f"{source.lower()}{kwargs_str}"
+            p.mkdir(parents=True, exist_ok=True, mode=0o2775)
+            logging.warning(
+                "Saving cache for %s %s (static) at %s",
+                source,
+                ",".join(data.data_vars),
+                p,
+            )
+            chunk_data(data).to_zarr(str(p), mode="a")
+            _chmod_tree(p, 0o2777)
+            return
+
+        unique_time_dim = "time" if "time" in data.dims else "forecast_reference_time"
+        # time should always exist, either observation time or validity time of a forecast
+        if len(set(data[unique_time_dim].data)) != len(data[unique_time_dim].data):
+            logging.info("Saving time with duplicated values")
+
+        for date in dates:
+            day_start = pd.to_datetime(date)
+            day_end = pd.to_datetime(day_start + pd.to_timedelta("23h59m"))
+            date_str = date.strftime("%Y%m%d")
+            p = self.path / f"{source.lower()}{kwargs_str}/{date_str}"
+            p.mkdir(parents=True, exist_ok=True, mode=0o2775)
+            logging.warning(
+                "Saving cache for %s %s on %s at %s",
+                source,
+                ",".join(data.data_vars),
+                date,
+                p,
+            )
+            valid_datetimes = sorted(
+                [
+                    datetime
+                    for datetime in set(data[unique_time_dim].data)
+                    if day_start <= datetime <= day_end
+                ]
+            )
+            data_day = data.sel({unique_time_dim: valid_datetimes})
+            data_day = chunk_data(data_day)
+            data_day.to_zarr(str(p), mode="a")
+            _chmod_tree(p, 0o2777)
 
 
 class DataProvider:
