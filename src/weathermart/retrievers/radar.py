@@ -513,9 +513,26 @@ class NordicRadarRetriever(BaseRetriever):
         "is_otherclutter",
         "is_convective",
     ]
+    rainbow_column_products = [
+        "rzc",
+        "czc",
+        "ezc20",
+        "ezc45",
+        "lzc",
+        "hzc",
+        "beam_height",
+        "radar_altitude",
+    ]
     variables = (
         [
             "lwe_precipitation_rate",
+            "lwe_precipitation_rate_netatmo",
+            "netatmo_increment",
+            "netatmo_frac_change",
+            "netatmo_max_increase",
+            "netatmo_max_decrease",
+            "netatmo_num",
+            "netatmo_success",
             "block_percent",
             "projection_lambert",
             "mosaic_info",
@@ -524,6 +541,7 @@ class NordicRadarRetriever(BaseRetriever):
         ]
         + flags
         + ["qc_flags"]
+        + rainbow_column_products
     )
     mapping_flags = {
         0: "is_nodata",
@@ -550,6 +568,10 @@ class NordicRadarRetriever(BaseRetriever):
     ]
     ROOT = PROD_ROOT
     FILE_TEMPLATE = PROD_FILE_TEMPLATE
+    RAINBOW_COLUMN_PRODUCT_ROOT = (
+        "/lustre/storeB/users/opmir9231/rainbow_column_products"
+    )
+    POSTPROCESSED_ROOT = "/lustre/storeB/users/opmir9231/nordic_radar_postprocessed"
     crs = {
         "lcc": "+proj=lcc +lat_0=63.3 +lon_0=15 \
             +lat_1=63.3 +lat_2=63.3 \
@@ -585,6 +607,133 @@ class NordicRadarRetriever(BaseRetriever):
         if len(datasets) == 1:
             return datasets[0]
         return xr.concat(datasets, dim="time")
+
+    def _prefix_cell_ids(self, ds: xr.Dataset, prefix: str) -> xr.Dataset:
+        if "cell" not in ds.dims:
+            return ds
+        cell_ids = np.array(
+            [f"{prefix}_{i}" for i in range(ds.sizes["cell"])], dtype=object
+        )
+        return ds.assign_coords(cell=("cell", cell_ids))
+
+    def _prefix_rainbow_cell_ids(self, ds: xr.Dataset) -> xr.Dataset:
+        if "cell" not in ds.dims:
+            return ds
+        radars = ds["radar"].astype(str).values
+        azimuths = ds["azimuth"].values
+        ranges = ds["range"].values
+        cell_ids = np.array(
+            [
+                f"rainbow_{radar}_{azimuth:07.2f}_{range_m:09.1f}"
+                for radar, azimuth, range_m in zip(radars, azimuths, ranges)
+            ],
+            dtype=object,
+        )
+        return ds.assign_coords(cell=("cell", cell_ids))
+
+    def _flatten_native_composite(self, ds: xr.Dataset) -> xr.Dataset:
+        grid_dims = [dim for dim in ds.dims if dim != "time"]
+        if not grid_dims:
+            return ds
+
+        flattened = ds.stack(cell=grid_dims).reset_index("cell", drop=True)
+        flattened = flattened.transpose("cell", "time", missing_dims="ignore")
+
+        rename = {}
+        if "lat" in flattened:
+            rename["lat"] = "latitude"
+        if "lon" in flattened:
+            rename["lon"] = "longitude"
+        flattened = flattened.rename(rename)
+
+        ncell = flattened.sizes["cell"]
+        extra_coords = {
+            "radar": ("cell", np.full(ncell, "nordic_composite", dtype=object)),
+            "azimuth": ("cell", np.full(ncell, np.nan, dtype=np.float32)),
+            "range": ("cell", np.full(ncell, np.nan, dtype=np.float32)),
+            "radar_latitude": ("cell", np.full(ncell, np.nan, dtype=np.float32)),
+            "radar_longitude": ("cell", np.full(ncell, np.nan, dtype=np.float32)),
+            "radar_altitude": ("cell", np.full(ncell, np.nan, dtype=np.float32)),
+        }
+        flattened = flattened.assign_coords(extra_coords)
+        flattened = self._prefix_cell_ids(flattened, "nordic")
+        flattened.attrs["grid_layout"] = "flattened_nordic_composite"
+        return flattened
+
+    def _open_rainbow_column_products(
+        self,
+        day: pd.Timestamp,
+        variables: list[str],
+        test: bool,
+    ) -> xr.Dataset | None:
+        path = (
+            pathlib.Path(self.RAINBOW_COLUMN_PRODUCT_ROOT)
+            / day.strftime("%Y%m%d")
+        )
+        if not path.exists():
+            logging.warning("Missing Rainbow column-product file: %s", path)
+            return None
+
+        ds = xr.open_zarr(path, consolidated=False)
+        if test:
+            ds = ds.isel(time=slice(0, 3))
+        ds = ds.sortby("time")
+        requested = [v for v in variables if v in ds.variables]
+        missing = sorted(set(variables) - set(requested))
+        if missing:
+            logging.warning(
+                "Rainbow column-product file %s is missing requested variables: %s",
+                path,
+                missing,
+            )
+        if not requested:
+            return None
+
+        ds = ds[requested]
+        ds = self._prefix_rainbow_cell_ids(ds)
+        ds.attrs["rainbow_column_product_root"] = str(
+            self.RAINBOW_COLUMN_PRODUCT_ROOT
+        )
+        ds.attrs["rainbow_column_product_file"] = str(path)
+        return _ensure_time_coord_metadata(ds)
+
+    def _open_postprocessed_radar(
+        self,
+        day: pd.Timestamp,
+        variables: list[str],
+        test: bool,
+    ) -> xr.Dataset | None:
+        path = pathlib.Path(self.POSTPROCESSED_ROOT) / day.strftime("%Y%m%d")
+        if not path.exists():
+            logging.warning("Missing postprocessed radar zarr: %s", path)
+            return None
+
+        ds = xr.open_zarr(path, consolidated=False)
+        if test:
+            ds = ds.isel(time=slice(0, 3))
+        ds = ds.sortby("time")
+        if "lat" not in ds.coords and "lat" in ds:
+            ds = ds.set_coords("lat")
+        if "lon" not in ds.coords and "lon" in ds:
+            ds = ds.set_coords("lon")
+
+        requested = [v for v in variables if v in ds.variables]
+        missing = sorted(set(variables) - set(requested))
+        if missing:
+            logging.warning(
+                "Postprocessed radar file %s is missing requested variables: %s",
+                path,
+                missing,
+            )
+        if variables and not requested:
+            return None
+
+        out = ds[requested] if requested else ds.coords.to_dataset()
+        out.attrs["source"] = "NORDIC_RADAR"
+        out.attrs["endpoint"] = "postprocessed"
+        out.attrs["postprocessed_root"] = str(self.POSTPROCESSED_ROOT)
+        out.attrs["postprocessed_file"] = str(path)
+        return _ensure_time_coord_metadata(out)
 
     def build_qc_flags(self, ds: xr.Dataset) -> xr.Dataset:
         qc = xr.zeros_like(ds[self.flags[0]], dtype="uint16")
@@ -658,54 +807,118 @@ class NordicRadarRetriever(BaseRetriever):
         dates, variables = checktype(dates, variables)
         unique_days = sorted(set(pd.to_datetime(d).date() for d in dates))
         var_list = list(variables)
+        rainbow_var_list = [
+            v for v in var_list if v in self.rainbow_column_products
+        ]
+        native_var_list = [
+            v for v in var_list if v not in self.rainbow_column_products
+        ]
 
         datasets: list[xr.Dataset] = []
         for day in unique_days:
             day = pd.Timestamp(day, tz="UTC")
-
-            candidates, resolved_endpoint = self._get_file_patterns(day, endpoint)
-            fpath = next(
-                (glob(str(p)) for p in candidates if len(glob(str(p))) > 0), None
+            day_times = pd.DatetimeIndex(
+                [
+                    pd.Timestamp(d).tz_localize(None)
+                    if pd.Timestamp(d).tzinfo is None
+                    else pd.Timestamp(d).tz_convert(None)
+                    for d in dates
+                    if pd.Timestamp(d).date() == day.date()
+                ]
             )
 
-            if fpath is None:
-                logging.warning(
-                    "Missing radar file for %s endpoint. Tried: %s",
-                    resolved_endpoint,
-                    candidates,
+            day_datasets: list[xr.Dataset] = []
+            if native_var_list:
+                if endpoint == "postprocessed":
+                    ds = self._open_postprocessed_radar(day, native_var_list, test)
+                    if ds is not None:
+                        if len(day_times):
+                            ds = ds.sel(time=day_times, method="nearest")
+                        selected_ds = self._flatten_native_composite(ds)
+                        selected_ds = selected_ds.chunk(
+                            {
+                                "cell": min(20000, selected_ds.sizes["cell"]),
+                                "time": 24,
+                            }
+                        )
+                        day_datasets.append(selected_ds)
+                else:
+                    candidates, resolved_endpoint = self._get_file_patterns(day, endpoint)
+                    fpath = next(
+                        (glob(str(p)) for p in candidates if len(glob(str(p))) > 0),
+                        None,
+                    )
+
+                    if fpath is None:
+                        logging.warning(
+                            "Missing radar file for %s endpoint. Tried: %s",
+                            resolved_endpoint,
+                            candidates,
+                        )
+                    else:
+                        logging.info("Reading radar file %s", fpath)
+                        ds = self._open_files(fpath)
+                        if test:
+                            ds = ds.isel(time=slice(0, 3))
+                        if ds.time.dtype == np.int32:
+                            ds["time"] = pd.to_datetime(
+                                ds.time, unit="s", utc=True
+                            ).tz_convert(None)
+                        ds = ds.sortby("time")
+                        if "lat" not in ds.coords or "lon" not in ds.coords:
+                            if "lon" in ds.data_vars and "lat" in ds.data_vars:
+                                ds = ds.set_coords(["lon", "lat"])
+                            else:
+                                if "laea" in fpath.name:
+                                    ds = assign_latlon_coords(ds, crs=self.crs["laea"])
+                                else:
+                                    ds = assign_latlon_coords(ds, crs=self.crs["lcc"])
+                        ds["lwe_precipitation_rate"] = ds[
+                            "lwe_precipitation_rate"
+                        ].where(ds["lwe_precipitation_rate"] < 1e6, np.nan)
+                        ds = align_to_template(ds)
+                        selected_native_vars = list(native_var_list)
+                        if dense_qc:
+                            ds = self.build_qc_flags(ds)
+                            selected_native_vars.append("qc_flags")
+                            selected_native_vars = list(set(selected_native_vars))
+                        ds.attrs["source"] = source
+                        ds.attrs["endpoint"] = resolved_endpoint
+                        ds = _ensure_time_coord_metadata(ds)
+                        selected_ds = ds[
+                            [v for v in selected_native_vars if v in ds.variables]
+                        ]
+                        selected_ds = self._flatten_native_composite(selected_ds)
+                        selected_ds = selected_ds.chunk(
+                            {"cell": min(20000, selected_ds.sizes["cell"]), "time": 24}
+                        )
+                        day_datasets.append(selected_ds)
+
+            if rainbow_var_list:
+                rainbow_ds = self._open_rainbow_column_products(
+                    day, rainbow_var_list, test
                 )
+                if rainbow_ds is not None:
+                    if len(day_times):
+                        rainbow_ds = rainbow_ds.sel(time=day_times, method="nearest")
+                    day_datasets.append(rainbow_ds)
+
+            if not day_datasets:
                 continue
 
-            logging.info("Reading radar file %s", fpath)
-            ds = self._open_files(fpath)
-            if test:
-                ds = ds.isel(time=slice(0, 3))
-            if ds.time.dtype == np.int32:
-                ds["time"] = pd.to_datetime(ds.time, unit="s", utc=True).tz_convert(
-                    None
+            if len(day_datasets) == 1:
+                datasets.append(day_datasets[0])
+            else:
+                datasets.append(
+                    xr.concat(
+                        day_datasets,
+                        dim="cell",
+                        join="outer",
+                        data_vars="all",
+                        coords="minimal",
+                        compat="override",
+                    )
                 )
-            ds = ds.sortby("time")
-            if "lat" not in ds.coords or "lon" not in ds.coords:
-                if "lon" in ds.data_vars and "lat" in ds.data_vars:
-                    ds = ds.set_coords(["lon", "lat"])
-                else:
-                    if "laea" in fpath.name:
-                        ds = assign_latlon_coords(ds, crs=self.crs["laea"])
-                    else:
-                        ds = assign_latlon_coords(ds, crs=self.crs["lcc"])
-            ds["lwe_precipitation_rate"] = ds["lwe_precipitation_rate"].where(
-                ds["lwe_precipitation_rate"] < 1e6, np.nan
-            )
-            ds = align_to_template(ds)
-            if dense_qc:
-                ds = self.build_qc_flags(ds)
-                var_list.append("qc_flags")
-                var_list = list(set(var_list))
-            ds.attrs["source"] = source
-            ds.attrs["endpoint"] = resolved_endpoint
-            ds = ds.chunk({"time": 24, "Yc": 748, "Xc": 689})
-            ds = _ensure_time_coord_metadata(ds)
-            datasets.append(ds[[v for v in var_list if v in ds.variables]])
 
         if not datasets:
             return xr.Dataset()

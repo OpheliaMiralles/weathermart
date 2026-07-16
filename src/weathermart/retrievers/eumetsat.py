@@ -447,6 +447,71 @@ def _iasi_wavenumber_cm1(channel: xr.DataArray) -> xr.DataArray:
     return 645.0 + (channel.astype(np.float32) - 1.0) * 0.25
 
 
+IASI_WAVENUMBER_RADIANCE_UNIT_SCALE = np.float32(1.0e5)
+IASI_WAVENUMBER_RADIANCE_UNITS = "mW m-2 sr-1 (cm-1)-1"
+
+
+def _fetch_coda_int16_array(coda_module: Any, coda_file: Any, path: str) -> np.ndarray:
+    """Read a CODA array as stored int16 values, with conversions disabled."""
+    previous_conversions = coda_module.get_option_perform_conversions()
+    try:
+        coda_module.set_option_perform_conversions(0)
+        cursor = coda_module.Cursor(coda_file, path)
+        return np.asarray(coda_module.cursor_read_int16_array(cursor), dtype=np.int16)
+    finally:
+        coda_module.set_option_perform_conversions(previous_conversions)
+
+
+def _iasi_giadr_channel_scale_factors(
+    nb_scale: int,
+    scale_factors: np.ndarray,
+    channel_first: np.ndarray,
+    channel_last: np.ndarray,
+    requested_channels: list[int],
+) -> dict[int, int]:
+    """Return HARP-compatible GIADR scale factors for requested IASI channels."""
+    out: dict[int, int] = {}
+    for channel in requested_channels:
+        for scale_index in range(nb_scale):
+            if channel_first[scale_index] <= channel <= channel_last[scale_index]:
+                out[channel] = int(scale_factors[scale_index])
+                break
+        if channel not in out:
+            raise ValueError(
+                f"No IASI GIADR scale factor found for channel {channel}"
+            )
+    return out
+
+
+def _iasi_giadr_scale_factors(
+    coda_module: Any,
+    coda_file: Any,
+    requested_channels: list[int],
+) -> dict[int, int]:
+    nb_scale = int(
+        coda_module.fetch(coda_file, "/GIADR_ScaleFactors/IDefScaleSondNbScale")
+    )
+    scale_factors = np.asarray(
+        coda_module.fetch(coda_file, "/GIADR_ScaleFactors/IDefScaleSondScaleFactor"),
+        dtype=np.int16,
+    )
+    channel_first = np.asarray(
+        coda_module.fetch(coda_file, "/GIADR_ScaleFactors/IDefScaleSondNsfirst"),
+        dtype=np.int16,
+    )
+    channel_last = np.asarray(
+        coda_module.fetch(coda_file, "/GIADR_ScaleFactors/IDefScaleSondNslast"),
+        dtype=np.int16,
+    )
+    return _iasi_giadr_channel_scale_factors(
+        nb_scale,
+        scale_factors,
+        channel_first,
+        channel_last,
+        requested_channels,
+    )
+
+
 def _flatten_non_time_dims_to_cell(
     array: xr.DataArray,
     *,
@@ -574,12 +639,18 @@ def _stack_radiance_channels_as_observations(
     if instrument != "IASI":
         out[output_name].attrs.setdefault("units", "K")
     else:
-        out[output_name].attrs.setdefault("units", "native_l1c_radiance")
-        out[output_name].attrs["long_name"] = "IASI L1C spectral radiance observation"
+        out[output_name].attrs.setdefault("units", IASI_WAVENUMBER_RADIANCE_UNITS)
+        out[output_name].attrs["long_name"] = (
+            "IASI L1C wavenumber radiance observation"
+        )
         out[output_name].attrs["source_field"] = "GS1cSpect"
+        out[output_name].attrs["scale_factor_applied"] = (
+            "GS1cSpect * 10^(-GIADR_ScaleFactors/IDefScaleSondScaleFactor) * 1e5"
+        )
         out[output_name].attrs["note"] = (
-            "IASI GS1cSpect values are native L1C spectral radiances, not "
-            "Planck-inverted brightness temperatures."
+            "IASI GS1cSpect values are scaled with GIADR_ScaleFactors as in "
+            "the HARP IASI_L1 wavenumber_radiance ingestion and converted from "
+            "W m-2 sr-1 (m-1)-1 to mW m-2 sr-1 (cm-1)-1."
         )
 
     if "_radiance_channel" in brightness_temperature.coords:
@@ -676,6 +747,71 @@ def _concat_cell_observations_by_time(ds: xr.Dataset) -> xr.Dataset:
         return ds.isel(time=slice(0, 0))
     out = xr.concat(groups, dim="time", join="outer")
     out.attrs.update(ds.attrs)
+    return out
+
+
+def _is_cell_observation_dataset(ds: xr.Dataset) -> bool:
+    return "cell" in ds.dims and (
+        ds.attrs.get("radiance_layout") == "mars_odb_like"
+        or ds.attrs.get("observation_layout") == "cell"
+    )
+
+
+def _ascat_winds_to_cell(
+    ds: xr.Dataset,
+    variables: list[str],
+    bbox: tuple[float, float, float, float] | None,
+) -> xr.Dataset:
+    rename = {}
+    if "longitude" in ds and "lon" not in ds:
+        rename["longitude"] = "lon"
+    if "latitude" in ds and "lat" not in ds:
+        rename["latitude"] = "lat"
+    if rename:
+        ds = ds.rename(rename)
+    if "lon" not in ds or "lat" not in ds:
+        raise KeyError("ASCAT raw swath requires lon/lat variables")
+
+    lon = ds["lon"]
+    lat = ds["lat"]
+    if float(lon.max(skipna=True)) > 180:
+        lon = ((lon + 180) % 360) - 180
+        ds = ds.assign(lon=lon)
+
+    sample_dims = tuple(dim for dim in lon.dims if dim in ds.dims)
+    if not sample_dims:
+        for name in variables:
+            if name in ds:
+                sample_dims = ds[name].dims
+                break
+    if not sample_dims:
+        raise ValueError("Could not identify ASCAT swath sample dimensions")
+
+    if bbox is not None:
+        xmin, ymin, xmax, ymax = bbox
+        mask = (ds["lon"] >= xmin) & (ds["lon"] <= xmax) & (ds["lat"] >= ymin) & (
+            ds["lat"] <= ymax
+        )
+        ds = ds.where(mask, drop=True)
+
+    selected = {name: ds[name] for name in variables if name in ds}
+    missing = sorted(set(variables) - set(selected))
+    if missing:
+        logger.warning("ASCAT file is missing requested variables: %s", missing)
+    selected["longitude"] = ds["lon"]
+    selected["latitude"] = ds["lat"]
+    out = xr.Dataset(selected, attrs=dict(ds.attrs))
+    out = _stack_dims_to_cell(out, sample_dims)
+    finite_location = np.isfinite(out["longitude"].values) & np.isfinite(
+        out["latitude"].values
+    )
+    out = out.isel(cell=np.where(finite_location)[0])
+
+    coord_names = [name for name in ("longitude", "latitude") if name in out]
+    if coord_names:
+        out = out.set_coords(coord_names)
+    out.attrs["observation_layout"] = "cell"
+    out.attrs["swath_layout"] = "native_ascat"
     return out
 
 
@@ -1117,11 +1253,13 @@ class EumetsatRetriever(BaseRetriever):
                                         ds,
                                         area,
                                     )
+                                else:
+                                    ds = _ascat_winds_to_cell(ds, satpy_vars, bbox)
                             t = extract_time_flex(Path(f).stem)
                         instrument = RADIANCE_READER_INSTRUMENTS.get(reader)
                         if instrument is not None:
                             radiance_output_name = (
-                                "spectral_radiance"
+                                "wavenumber_radiance"
                                 if instrument == "IASI"
                                 else "brightness_temperature"
                             )
@@ -1237,9 +1375,7 @@ class EumetsatRetriever(BaseRetriever):
                 if ds_list:
                     if (
                         aggregate_time
-                        and ds_list[0].attrs.get("radiance_layout")
-                        == "mars_odb_like"
-                        and "cell" in ds_list[0].dims
+                        and _is_cell_observation_dataset(ds_list[0])
                     ):
                         all_ds.append(
                             _aggregate_cell_observation_granules(
@@ -1259,8 +1395,7 @@ class EumetsatRetriever(BaseRetriever):
             if cell_observations_aggregated:
                 ds = ds.sel(time=dates)
             elif (
-                ds.attrs.get("radiance_layout") == "mars_odb_like"
-                and "cell" in ds.dims
+                _is_cell_observation_dataset(ds)
             ):
                 ds = ds.assign_coords(
                     time=_time_window_centers(ds["time"].values, aggregation_window)
@@ -1475,11 +1610,13 @@ def iasi_metop_to_xarray(
     n_mdr = len(coda.fetch(coda_file, "/MDR"))
     if n_mdr == 0:
         raise ValueError(f"No MDR records found in {eps_file}")
-    first_spectrum = np.asarray(coda.fetch(coda_file, "/MDR[0]/MDR/GS1cSpect"))
+    first_spectrum = _fetch_coda_int16_array(coda, coda_file, "/MDR[0]/MDR/GS1cSpect")
     n_chan = first_spectrum.shape[-1]
-    wn_start = 645.0
-    wn_step = 0.25
-    wn = wn_start + np.arange(n_chan) * wn_step
+    first_native_channel = int(coda.fetch(coda_file, "/MDR[0]/MDR/IDefNsfirst1b"))
+    last_native_channel = first_native_channel + n_chan - 1
+    wn_step = float(coda.fetch(coda_file, "/MDR[0]/MDR/IDefSpectDWn1b"))
+    native_channels = np.arange(first_native_channel, last_native_channel + 1)
+    wn = wn_step * native_channels
     t_eps = np.median(np.asarray(coda.fetch(coda_file, "/MDR[0]/MDR/OnboardUTC")))
     epoch = datetime.datetime(2000, 1, 1, tzinfo=datetime.UTC)
     times = epoch + datetime.timedelta(seconds=t_eps)
@@ -1498,10 +1635,25 @@ def iasi_metop_to_xarray(
         )
     if not channel_indices:
         raise ValueError(f"No supported IASI variables requested: {variables}")
+    native_channel_by_name = {
+        name: int(native_channels[index])
+        for name, index in channel_indices.items()
+    }
+    channel_scale_factors = _iasi_giadr_scale_factors(
+        coda,
+        coda_file,
+        list(native_channel_by_name.values()),
+    )
     channels_out = {name: [] for name in channel_indices}
     for i in range(n_mdr):
         base = f"/MDR[{i}]/MDR"
-        rad = np.asarray(coda.fetch(coda_file, base + "/GS1cSpect"))
+        mdr_first_channel = int(coda.fetch(coda_file, base + "/IDefNsfirst1b"))
+        if mdr_first_channel != first_native_channel:
+            raise ValueError(
+                f"IASI MDR {i} first channel {mdr_first_channel} differs from "
+                f"initial first channel {first_native_channel}"
+            )
+        rad = _fetch_coda_int16_array(coda, coda_file, base + "/GS1cSpect")
         loc = np.asarray(coda.fetch(coda_file, base + "/GGeoSondLoc"))
         onboard_utc = np.asarray(coda.fetch(coda_file, base + "/OnboardUTC"))
         lon, lat = loc[..., 0], loc[..., 1]
@@ -1520,7 +1672,12 @@ def iasi_metop_to_xarray(
             onboard_utc = np.full(flat_time_count, np.nanmedian(onboard_utc))
 
         for name, index in channel_indices.items():
-            channels_out[name].append(rad[:, index])
+            scale_factor = channel_scale_factors[native_channel_by_name[name]]
+            channels_out[name].append(
+                rad[:, index].astype(np.float32)
+                * np.float32(10.0**(-scale_factor))
+                * IASI_WAVENUMBER_RADIANCE_UNIT_SCALE
+            )
 
         lats.append(lat)
         lons.append(lon)
@@ -1572,6 +1729,7 @@ def iasi_metop_to_xarray(
             attrs={
                 "source": "IASI L1C EPS",
                 "platform": "Metop",
+                "radiance_scale": "GIADR_ScaleFactors applied and converted by 1e5",
             },
         )
     else:
@@ -1600,14 +1758,24 @@ def iasi_metop_to_xarray(
             attrs={
                 "source": "IASI L1C EPS",
                 "platform": "Metop",
+                "radiance_scale": "GIADR_ScaleFactors applied and converted by 1e5",
             },
         )
     for name, index in channel_indices.items():
+        native_channel = native_channel_by_name[name]
+        scale_factor = channel_scale_factors[native_channel]
         ds[name].attrs.update(
             {
-                "long_name": f"IASI channel {name} radiance",
+                "long_name": f"IASI channel {name} wavenumber radiance",
                 "channel": int(name),
-                "wavenumber_cm-1": float(wn[index]),
+                "native_spectral_channel": native_channel,
+                "wavenumber_m-1": float(wn[index]),
+                "wavenumber_cm-1": float(wn[index] / 100.0),
+                "units": IASI_WAVENUMBER_RADIANCE_UNITS,
+                "scale_factor_applied": (
+                    "GS1cSpect * "
+                    f"10^(-{scale_factor}) * 1e5 from GIADR_ScaleFactors"
+                ),
             }
         )
     return ds, times.replace(tzinfo=None)

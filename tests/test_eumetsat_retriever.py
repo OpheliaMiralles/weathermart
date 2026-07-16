@@ -7,6 +7,7 @@ import xarray as xr
 from weathermart.retrievers.eumetsat import _centered_time_window
 from weathermart.retrievers.eumetsat import _aggregate_cell_observation_granules
 from weathermart.retrievers.eumetsat import _concat_cell_observations_by_time
+from weathermart.retrievers.eumetsat import _iasi_giadr_channel_scale_factors
 from weathermart.retrievers.eumetsat import _prepare_eumetsat_dataset_time
 from weathermart.retrievers.eumetsat import _stack_radiance_channels_as_observations
 
@@ -19,6 +20,18 @@ def test_centered_time_window_uses_half_aggregation_window() -> None:
 
     assert start == datetime.datetime(2025, 1, 1, 7, 30)
     assert end == datetime.datetime(2025, 1, 1, 10, 30)
+
+
+def test_iasi_giadr_channel_scale_factors_use_channel_ranges() -> None:
+    scales = _iasi_giadr_channel_scale_factors(
+        3,
+        np.array([5, 6, 7], dtype=np.int16),
+        np.array([1, 101, 201], dtype=np.int16),
+        np.array([100, 200, 300], dtype=np.int16),
+        [38, 150, 270],
+    )
+
+    assert scales == {38: 5, 150: 6, 270: 7}
 
 
 def test_granule_time_aggregates_with_scan_time_metadata() -> None:

@@ -48,6 +48,7 @@ NordicRadarRetriever = "weathermart.retrievers:NordicRadarRetriever"
 FrostRetriever = "weathermart.retrievers:FrostRetriever"
 MarsRetriever = "weathermart.retrievers:MarsRetriever"
 MarsODBRetriever = "weathermart.retrievers:MarsODBRetriever"
+MEPSNetcdfRetriever = "weathermart.retrievers:MEPSNetcdfRetriever"
 
 [dependency-groups]
 dev = [

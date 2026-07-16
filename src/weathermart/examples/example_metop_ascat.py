@@ -35,19 +35,18 @@ def retrieve():
                 variables=vars_ascat,
                 product="ascat_coastal_winds",
                 bbox=bbox,
-                test=True,
+                test=False,
                 dates=[date + pd.Timedelta(hours=hour) for hour in range(0, 24, 3)],
                 storage_key="ascat_test",
                 eumdac_credentials_path=CREDENTIALS_PATH,
-                resample=True,
-                resolution="12km",
+                resample=False,
                 aggregation_window="3h",
                 aggregate_time=True,
             )
             print(data)
             print(data.time.values)
             plot_polar(
-                data.rename({"lon": "longitude", "lat": "latitude"}),
+                data,
                 t=data.time.values[0],
                 var=vars_ascat[0],
             )
