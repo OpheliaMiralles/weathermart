@@ -37,7 +37,6 @@ plot*
 retrieve_ascat*
 plots
 mars_requests*
-meps_netcdf.py
 *.inp
 *.odb
 *.zarr
