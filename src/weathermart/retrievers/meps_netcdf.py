@@ -1,6 +1,6 @@
 import datetime
-from pathlib import Path
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -9,7 +9,6 @@ import xarray as xr
 
 from weathermart.base import BaseRetriever
 from weathermart.base import checktype
-
 
 ARCHIVE_ROOT = Path("/lustre/arkivB/projects/metproduction/MEPS")
 
