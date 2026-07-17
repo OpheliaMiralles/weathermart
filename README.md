@@ -49,6 +49,7 @@ The currently registered retrievers are:
 | `EumetsatRetriever` | `MSG_SEVIRI`, `METOP`, `MTG`, `NOAA`, `AWS` | EUMETSAT satellite products. |
 | `MarsODBRetriever` | `MARS_ODB`, `ECMWF_ODB` | ECMWF MARS ODB radiance request files and optional submission. |
 | `MarsRetriever` | `MARS`, `ECMWF_MARS`, `MARS_GRIB` | ECMWF MARS requests. |
+| `MEPSNetcdfRetriever` | `MEPS-NETCDF`, `MEPSNETCDF`, `MEPS_FCST`, `MEPS` | Local deterministic MEPS NetCDF forecasts, including continuous hourly valid-time output. |
 | `FrostRetriever` | `OBSERVATIONS`, `LIGHTNING` | Frost observations and gridded lightning counts. |
 | `NetAtmoRetriever` | `NETATMO` | Local NetAtmo archive data. |
 | `TitanRetriever` | `TITAN` | Local TITAN Nordic analysis diagnostics. |
@@ -58,6 +59,19 @@ The currently registered retrievers are:
 
 Available variables are exposed on each retriever through its `variables`
 attribute.
+
+## Archive builders
+
+The package also exposes local archive-building commands for the MET Norway
+MEPS and Rainbow workflows:
+
+```shell
+extract-meps-forecasts-daily-zarr --help
+build-meps-continuous-hourly-zarr --help
+extract-meps-vertical-derived-daily-zarr --help
+extract-rainbow-column-products-daily-zarr --help
+add-rainbow-beam-height-to-zarr --help
+```
 
 ## Direct retrieval
 

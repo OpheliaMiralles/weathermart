@@ -44,6 +44,10 @@ Current built-in retrievers
    * - ``MarsODBRetriever``
      - ``MARS_ODB``, ``ECMWF_ODB``
      - MARS ODB request files and optional submission.
+   * - ``MEPSNetcdfRetriever``
+     - ``MEPS-NETCDF``, ``MEPSNETCDF``, ``MEPS_FCST``, ``MEPS``
+     - Local deterministic MEPS NetCDF forecasts, including continuous hourly
+       valid-time output.
    * - ``FrostRetriever``
      - ``OBSERVATIONS``, ``LIGHTNING``
      - Frost observations and gridded lightning counts.
