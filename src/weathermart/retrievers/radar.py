@@ -410,6 +410,7 @@ class OperaRetriever(BaseRetriever):
             return total_data
         return xr.Dataset()
 
+
 def plot_qc_flags(
     ds: xr.Dataset, source: str, time_index: int = 0, output_file: str = "qc.png"
 ):
