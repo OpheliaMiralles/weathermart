@@ -38,7 +38,7 @@ def test_provider() -> DataProvider:
     with tempfile.TemporaryDirectory() as temp_cache:
         cache_path = pathlib.Path(temp_cache)
         cache = CacheRetriever(cache_path)
-        logging.info(f"Using temporary cache located at {str(cache_path)}.")
+        logging.info(f"Using temporary cache located at {cache_path!s}.")
         yield DataProvider(cache, retrievers=available_retrievers())
 
 

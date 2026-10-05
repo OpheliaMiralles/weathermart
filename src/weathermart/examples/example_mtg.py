@@ -33,6 +33,7 @@ def retrieve():
         except Exception as e:
             print(f"Failed retrieving date {date.date()}: {e}")
             continue
-        
+
+
 if __name__ == "__main__":
     retrieve()

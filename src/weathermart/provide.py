@@ -178,7 +178,7 @@ class CacheRetriever:
             If the cache directory is read-only.
         """
         if self.__read_only:
-            raise PermissionError(f"Cache directory {str(self.path)} is read-only.")
+            raise PermissionError(f"Cache directory {self.path!s} is read-only.")
         dates, variables = checktype(dates, variables)
         for variable in data.data_vars:
             data[variable].encoding.clear()
