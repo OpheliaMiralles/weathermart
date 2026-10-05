@@ -7,8 +7,8 @@ import pandas as pd
 xmin, xmax = -180, 180
 ymin, ymax = 50, 90
 bbox = (xmin, ymin, xmax, ymax)
-from weathermart.default_provider import default_provider  # noqa: E402
-from weathermart.retrievers.eumetsat import plot_polar  # noqa: E402
+from weathermart.default_provider import default_provider
+from weathermart.retrievers.eumetsat import plot_polar
 
 CREDENTIALS_PATH = os.environ.get("EUMDAC_CREDENTIALS_PATH", ".eumdac_credentials.json")
 vars_avhrr = ["1", "2", "3a", "4", "5", "satellite_zenith_angle", "solar_zenith_angle"]
