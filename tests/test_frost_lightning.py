@@ -1,10 +1,110 @@
 from pathlib import Path
 
+import httpx
 import numpy as np
 import pandas as pd
 import xarray as xr
 
+from weathermart.retrievers.frost import FROST_BASE_OBSERVATION_VARIABLES
 from weathermart.retrievers.frost import FrostRetriever
+
+
+def test_frost_canonical_surface_pressure_and_wind_are_available() -> None:
+    assert "surface_air_pressure" in FROST_BASE_OBSERVATION_VARIABLES
+    assert "wind_speed" in FROST_BASE_OBSERVATION_VARIABLES
+    assert "surface_air_pressure" in FrostRetriever.variables
+    assert "wind_speed" in FrostRetriever.variables
+
+
+def test_frost_request_retries_transport_errors(monkeypatch) -> None:
+    attempts = []
+    client_options = {}
+
+    class Response:
+        status_code = 200
+
+        @staticmethod
+        def raise_for_status() -> None:
+            return None
+
+    class Client:
+        def __init__(self, **kwargs) -> None:
+            client_options.update(kwargs)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args) -> None:
+            return None
+
+        def get(self, url, params):
+            attempts.append((url, params))
+            if len(attempts) < 3:
+                raise httpx.ReadTimeout("timed out")
+            return Response()
+
+    delays = []
+    monkeypatch.setattr("weathermart.retrievers.frost.httpx.Client", Client)
+    monkeypatch.setattr("weathermart.retrievers.frost.time.sleep", delays.append)
+
+    response = FrostRetriever.request_from_frost(
+        "observations", "id", "secret", {"sources": "SN1"}
+    )
+
+    assert isinstance(response, Response)
+    assert len(attempts) == 3
+    assert delays == [1, 2]
+    assert client_options["timeout"].connect == 30.0
+    assert client_options["timeout"].read == 120.0
+
+
+def test_frost_observation_batch_splits_http_412(monkeypatch) -> None:
+    requested_sources = []
+
+    class Response:
+        status_code = 200
+
+        def __init__(self, stations) -> None:
+            self._stations = stations
+
+        def json(self):
+            return {"data": [{"sourceId": station} for station in self._stations]}
+
+    def request_from_frost(*, args, **kwargs):
+        stations = args["sources"].split(",")
+        requested_sources.append(stations)
+        if len(stations) > 2:
+            request = httpx.Request("GET", "https://frost.test/observations")
+            response = httpx.Response(412, request=request)
+            raise httpx.HTTPStatusError(
+                "batch too large", request=request, response=response
+            )
+        return Response(stations)
+
+    monkeypatch.setattr(FrostRetriever, "request_from_frost", request_from_frost)
+
+    data = FrostRetriever._request_observation_batch(
+        endpoint="observations",
+        client_id="id",
+        client_secret="secret",
+        stations=["SN1", "SN2", "SN3", "SN4", "SN5"],
+        query_args={"elements": "air_temperature"},
+    )
+
+    assert [item["sourceId"] for item in data] == [
+        "SN1",
+        "SN2",
+        "SN3",
+        "SN4",
+        "SN5",
+    ]
+    assert requested_sources == [
+        ["SN1", "SN2", "SN3", "SN4", "SN5"],
+        ["SN1", "SN2"],
+        ["SN3", "SN4", "SN5"],
+        ["SN3"],
+        ["SN4", "SN5"],
+    ]
 
 
 class _Resp:

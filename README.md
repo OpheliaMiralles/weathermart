@@ -119,3 +119,11 @@ Pass `cache_location=None` to skip caching.
 
 Runnable examples live in [`src/weathermart/examples/`](src/weathermart/examples/),
 and Sphinx documentation is under [`docs/`](docs/).
+
+For nowcast input retrieval, see
+[`example_radar_nowcast_inputs.py`](src/weathermart/examples/example_radar_nowcast_inputs.py),
+which returns postprocessed raw-radar/Netatmo fields and Rainbow column products
+as separate datasets. Keeping the Nordic composite grid and native Rainbow polar
+cells separate avoids an expensive sparse spatial concatenation; the Rainbow
+result is still aligned to the same fixed cell template used by its Anemoi
+dataset.

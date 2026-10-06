@@ -521,7 +521,6 @@ class NordicRadarRetriever(BaseRetriever):
         "lzc",
         "hzc",
         "beam_height",
-        "radar_altitude",
     ]
     variables = (
         [
@@ -570,6 +569,9 @@ class NordicRadarRetriever(BaseRetriever):
     FILE_TEMPLATE = PROD_FILE_TEMPLATE
     RAINBOW_COLUMN_PRODUCT_ROOT = (
         "/lustre/storeB/users/opmir9231/rainbow_column_products"
+    )
+    RAINBOW_COLUMN_PRODUCT_TEMPLATE = (
+        "/lustre/storeB/users/opmir9231/rainbow_column_products_template.zarr"
     )
     POSTPROCESSED_ROOT = "/lustre/storeB/users/opmir9231/nordic_radar_postprocessed"
     crs = {
@@ -631,6 +633,105 @@ class NordicRadarRetriever(BaseRetriever):
         )
         return ds.assign_coords(cell=("cell", cell_ids))
 
+    def _align_rainbow_cell_template(self, ds: xr.Dataset) -> xr.Dataset:
+        template_path = pathlib.Path(
+            os.environ.get(
+                "RAINBOW_COLUMN_PRODUCT_TEMPLATE",
+                self.RAINBOW_COLUMN_PRODUCT_TEMPLATE,
+            )
+        )
+        if not template_path.exists():
+            return self._prefix_rainbow_cell_ids(ds)
+
+        template = xr.open_zarr(template_path, consolidated=False)
+        aligned = self._align_rainbow_radar_blocks(ds, template)
+        if aligned is None:
+            # Compatibility fallback for archives whose polar-cell layout is not
+            # composed of the fixed, contiguous radar blocks used by the current
+            # Rainbow archive.
+            aligned = self._prefix_rainbow_cell_ids(ds).reindex(
+                cell=template["cell"]
+            )
+        template_coords = [
+            "cell",
+            "azimuth",
+            "range",
+            "radar",
+            "radar_latitude",
+            "radar_longitude",
+            "radar_altitude",
+            "latitude",
+            "longitude",
+        ]
+        coords = {
+            name: ("cell", template[name].data)
+            for name in template_coords
+            if name in template and name not in aligned.data_vars
+        }
+        aligned = aligned.assign_coords(coords)
+        aligned.attrs["rainbow_column_product_template"] = str(template_path)
+        return aligned
+
+    @staticmethod
+    def _rainbow_radar_blocks(ds: xr.Dataset) -> dict[str, slice] | None:
+        """Return contiguous cell slices for each radar, or None if ambiguous."""
+        if "cell" not in ds.dims or "radar" not in ds:
+            return None
+        labels = np.asarray(ds["radar"].values).astype(str)
+        if labels.ndim != 1 or labels.size != ds.sizes["cell"]:
+            return None
+        starts = np.concatenate(
+            ([0], np.flatnonzero(labels[1:] != labels[:-1]) + 1)
+        )
+        stops = np.concatenate((starts[1:], [labels.size]))
+        blocks = {
+            labels[start]: slice(int(start), int(stop))
+            for start, stop in zip(starts, stops)
+        }
+        if len(blocks) != len(starts):
+            return None
+        return blocks
+
+    def _align_rainbow_radar_blocks(
+        self,
+        ds: xr.Dataset,
+        template: xr.Dataset,
+    ) -> xr.Dataset | None:
+        """Align fixed polar radar blocks without constructing string cell IDs.
+
+        Each Rainbow radar contributes one contiguous polar grid with identical
+        azimuth/range ordering. Mapping whole blocks is substantially faster than
+        creating and indexing more than a million object-string cell labels.
+        """
+        source_blocks = self._rainbow_radar_blocks(ds)
+        template_blocks = self._rainbow_radar_blocks(template)
+        if source_blocks is None or template_blocks is None:
+            return None
+        if not set(source_blocks).issubset(template_blocks):
+            return None
+
+        indexer = np.zeros(template.sizes["cell"], dtype=np.int64)
+        valid = np.zeros(template.sizes["cell"], dtype=bool)
+        for radar, target_slice in template_blocks.items():
+            source_slice = source_blocks.get(radar)
+            if source_slice is None:
+                continue
+            source_size = source_slice.stop - source_slice.start
+            target_size = target_slice.stop - target_slice.start
+            if source_size != target_size:
+                return None
+            indexer[target_slice] = np.arange(
+                source_slice.start,
+                source_slice.stop,
+                dtype=np.int64,
+            )
+            valid[target_slice] = True
+
+        aligned = ds.isel(cell=xr.DataArray(indexer, dims="cell"))
+        if not valid.all():
+            aligned = aligned.where(xr.DataArray(valid, dims="cell"))
+        return aligned
+
     def _flatten_native_composite(self, ds: xr.Dataset) -> xr.Dataset:
         grid_dims = [dim for dim in ds.dims if dim != "time"]
         if not grid_dims:
@@ -678,19 +779,18 @@ class NordicRadarRetriever(BaseRetriever):
         if test:
             ds = ds.isel(time=slice(0, 3))
         ds = ds.sortby("time")
-        requested = [v for v in variables if v in ds.variables]
+        requested = [v for v in variables if v in ds.data_vars]
         missing = sorted(set(variables) - set(requested))
         if missing:
             logging.warning(
-                "Rainbow column-product file %s is missing requested variables: %s",
+                "Rainbow column-product file %s is missing requested data variables: %s",
                 path,
                 missing,
             )
         if not requested:
             return None
 
-        ds = ds[requested]
-        ds = self._prefix_rainbow_cell_ids(ds)
+        ds = self._align_rainbow_cell_template(ds[requested])
         ds.attrs["rainbow_column_product_root"] = str(
             self.RAINBOW_COLUMN_PRODUCT_ROOT
         )
@@ -734,6 +834,84 @@ class NordicRadarRetriever(BaseRetriever):
         out.attrs["postprocessed_root"] = str(self.POSTPROCESSED_ROOT)
         out.attrs["postprocessed_file"] = str(path)
         return _ensure_time_coord_metadata(out)
+
+    def retrieve_nowcast_inputs(
+        self,
+        dates: datetime.date | str | pd.Timestamp | list[Any],
+        *,
+        radar_variables: list[str] | None = None,
+        rainbow_variables: list[str] | None = None,
+        test: bool = False,
+    ) -> tuple[xr.Dataset, xr.Dataset]:
+        """Read radar/Netatmo and Rainbow inputs without mixing their grids.
+
+        The postprocessed radar fields remain on their native ``Yc``/``Xc``
+        grid. Rainbow column products are aligned to the fixed polar-cell
+        template used by the Rainbow Anemoi dataset. Both outputs remain lazy
+        until the caller invokes ``load()`` or otherwise computes them.
+        """
+        if not isinstance(dates, list):
+            dates = [dates]
+        requested_times = pd.DatetimeIndex(
+            [
+                pd.Timestamp(date).tz_localize(None)
+                if pd.Timestamp(date).tzinfo is None
+                else pd.Timestamp(date).tz_convert(None)
+                for date in dates
+            ]
+        ).sort_values()
+        radar_variables = radar_variables or [
+            "lwe_precipitation_rate",
+            "lwe_precipitation_rate_netatmo",
+        ]
+        rainbow_variables = rainbow_variables or list(
+            self.rainbow_column_products
+        )
+
+        invalid_rainbow = sorted(
+            set(rainbow_variables) - set(self.rainbow_column_products)
+        )
+        if invalid_rainbow:
+            raise ValueError(
+                f"Not Rainbow column products: {invalid_rainbow}"
+            )
+
+        radar_days: list[xr.Dataset] = []
+        rainbow_days: list[xr.Dataset] = []
+        for date in sorted(set(requested_times.date)):
+            day = pd.Timestamp(date, tz="UTC")
+            day_times = requested_times[requested_times.date == date]
+
+            radar = self._open_postprocessed_radar(
+                day, radar_variables, test
+            )
+            if radar is not None:
+                radar_days.append(radar.sel(time=day_times, method="nearest"))
+
+            rainbow = self._open_rainbow_column_products(
+                day, rainbow_variables, test
+            )
+            if rainbow is not None:
+                rainbow_days.append(
+                    rainbow.sel(time=day_times, method="nearest")
+                )
+
+        def combine(days: list[xr.Dataset]) -> xr.Dataset:
+            if not days:
+                return xr.Dataset()
+            if len(days) == 1:
+                return _ensure_time_coord_metadata(days[0])
+            return _ensure_time_coord_metadata(
+                xr.concat(
+                    days,
+                    dim="time",
+                    join="outer",
+                    compat="no_conflicts",
+                    coords="minimal",
+                ).sortby("time")
+            )
+
+        return combine(radar_days), combine(rainbow_days)
 
     def build_qc_flags(self, ds: xr.Dataset) -> xr.Dataset:
         qc = xr.zeros_like(ds[self.flags[0]], dtype="uint16")

@@ -4,10 +4,12 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-from weathermart.retrievers.eumetsat import _centered_time_window
 from weathermart.retrievers.eumetsat import _aggregate_cell_observation_granules
+from weathermart.retrievers.eumetsat import _align_cell_observation_times
+from weathermart.retrievers.eumetsat import _centered_time_window
 from weathermart.retrievers.eumetsat import _concat_cell_observations_by_time
 from weathermart.retrievers.eumetsat import _iasi_giadr_channel_scale_factors
+from weathermart.retrievers.eumetsat import _iasi_valid_mdr_indices
 from weathermart.retrievers.eumetsat import _prepare_eumetsat_dataset_time
 from weathermart.retrievers.eumetsat import _stack_radiance_channels_as_observations
 
@@ -32,6 +34,18 @@ def test_iasi_giadr_channel_scale_factors_use_channel_ranges() -> None:
     )
 
     assert scales == {38: 5, 150: 6, 270: 7}
+
+
+def test_iasi_valid_mdr_indices_exclude_dummy_records() -> None:
+    class FakeCursor:
+        def __init__(self, _file, path):
+            index = int(path.split("[")[1].split("]")[0])
+            self.type_class = "special" if index in {2, 5} else "record"
+
+    class FakeCoda:
+        Cursor = FakeCursor
+
+    assert _iasi_valid_mdr_indices(FakeCoda, object(), 7) == [0, 1, 3, 4, 6]
 
 
 def test_granule_time_aggregates_with_scan_time_metadata() -> None:
@@ -183,6 +197,30 @@ def test_aggregate_cell_observation_granules_concatenates_before_time_concat() -
             ]
         ),
     )
+
+
+def test_align_cell_observation_times_preserves_missing_requested_slot() -> None:
+    ds = xr.Dataset(
+        {
+            "spectral_radiance": (
+                ("time", "cell"),
+                np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32),
+            )
+        },
+        coords={
+            "time": pd.to_datetime(
+                ["2020-10-16T06:00:00", "2020-10-16T12:00:00"]
+            ),
+            "cell": [0, 1],
+        },
+    )
+    requested = pd.date_range("2020-10-16T06:00:00", periods=3, freq="3h")
+
+    out = _align_cell_observation_times(ds, list(requested))
+
+    assert out.sizes == {"time": 3, "cell": 2}
+    assert out["spectral_radiance"].isel(time=1).isnull().all()
+    np.testing.assert_array_equal(out["time"].values, requested.values)
 
 
 def test_stack_radiance_channels_avoids_stack_coordinate_temporaries() -> None:

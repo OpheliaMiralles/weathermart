@@ -353,15 +353,39 @@ def _odb_datetimes(frame: pd.DataFrame) -> pd.Series:
     return pd.to_datetime(date_values + time_values, format="%Y%m%d%H%M%S")
 
 
-def _time_window_centers(values, window: str | None) -> pd.DatetimeIndex:
+def _validate_aggregation_alignment(alignment: str) -> str:
+    if alignment not in {"center", "past"}:
+        raise ValueError(
+            "aggregation_alignment must be either 'center' or 'past', "
+            f"not {alignment!r}"
+        )
+    return alignment
+
+
+def _time_window_centers(
+    values,
+    window: str | None,
+    aggregation_alignment: str = "center",
+) -> pd.DatetimeIndex:
     times = pd.to_datetime(values)
     if window is None:
         return pd.DatetimeIndex(times)
+    aggregation_alignment = _validate_aggregation_alignment(
+        aggregation_alignment
+    )
+    if aggregation_alignment == "past":
+        # Label (t - window, t] by its ending/valid time. In particular, an
+        # observation exactly at t belongs to t, not the following window.
+        return pd.DatetimeIndex(times).ceil(window)
     half_window = pd.to_timedelta(window) / 2
     return pd.DatetimeIndex(times + half_window).floor(window)
 
 
-def _empty_odb_dataset(source: str, aggregation_window: str | None) -> xr.Dataset:
+def _empty_odb_dataset(
+    source: str,
+    aggregation_window: str | None,
+    aggregation_alignment: str = "center",
+) -> xr.Dataset:
     return xr.Dataset(
         coords={"time": np.array([], dtype="datetime64[ns]"), "cell": []},
         attrs={
@@ -370,6 +394,7 @@ def _empty_odb_dataset(source: str, aggregation_window: str | None) -> xr.Datase
             "aggregation_window": ""
             if aggregation_window is None
             else aggregation_window,
+            "aggregation_alignment": aggregation_alignment,
         },
     )
 
@@ -377,12 +402,29 @@ def _empty_odb_dataset(source: str, aggregation_window: str | None) -> xr.Datase
 def _analysis_window_bounds(
     analysis_time: pd.Timestamp,
     window: str | None,
+    aggregation_alignment: str = "center",
 ) -> tuple[pd.Timestamp, pd.Timestamp] | None:
     if window is None:
         return None
     analysis_time = pd.to_datetime(analysis_time)
+    aggregation_alignment = _validate_aggregation_alignment(
+        aggregation_alignment
+    )
+    if aggregation_alignment == "past":
+        return analysis_time - pd.to_timedelta(window), analysis_time
     half_window = pd.to_timedelta(window) / 2
     return analysis_time - half_window, analysis_time + half_window
+
+
+def _analysis_window_mask(
+    observation_times: pd.Series,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+    aggregation_alignment: str,
+) -> pd.Series:
+    if aggregation_alignment == "past":
+        return (observation_times > start) & (observation_times <= end)
+    return (observation_times >= start) & (observation_times < end)
 
 
 def _assign_requested_analysis_times(
@@ -390,17 +432,23 @@ def _assign_requested_analysis_times(
     observation_time_column: str,
     aggregation_window: str | None,
     analysis_times: list[Any] | tuple[Any, ...] | pd.DatetimeIndex | Any,
+    aggregation_alignment: str = "center",
 ) -> pd.DataFrame:
     centers = pd.DatetimeIndex(pd.to_datetime(analysis_times))
     chunks: list[pd.DataFrame] = []
     for center in centers:
-        bounds = _analysis_window_bounds(center, aggregation_window)
+        bounds = _analysis_window_bounds(
+            center, aggregation_window, aggregation_alignment
+        )
         if bounds is None:
             selected = working.copy()
         else:
             start, end = bounds
-            mask = (working[observation_time_column] >= start) & (
-                working[observation_time_column] < end
+            mask = _analysis_window_mask(
+                working[observation_time_column],
+                start,
+                end,
+                aggregation_alignment,
             )
             selected = working.loc[mask].copy()
         if selected.empty:
@@ -416,16 +464,22 @@ def _assign_per_row_analysis_times(
     working: pd.DataFrame,
     observation_time_column: str,
     aggregation_window: str | None,
+    aggregation_alignment: str = "center",
 ) -> pd.DataFrame:
     chunks: list[pd.DataFrame] = []
     for center, group in working.groupby("_weathermart_requested_analysis_time"):
-        bounds = _analysis_window_bounds(pd.to_datetime(center), aggregation_window)
+        bounds = _analysis_window_bounds(
+            pd.to_datetime(center), aggregation_window, aggregation_alignment
+        )
         if bounds is None:
             selected = group.copy()
         else:
             start, end = bounds
-            mask = (group[observation_time_column] >= start) & (
-                group[observation_time_column] < end
+            mask = _analysis_window_mask(
+                group[observation_time_column],
+                start,
+                end,
+                aggregation_alignment,
             )
             selected = group.loc[mask].copy()
         if selected.empty:
@@ -462,9 +516,15 @@ def odb_dataframe_to_xarray(
     source: str = "MARS_ODB",
     aggregation_window: str | None = "3h",
     analysis_times: list[Any] | tuple[Any, ...] | pd.DatetimeIndex | Any = None,
+    aggregation_alignment: str = "center",
 ) -> xr.Dataset:
+    aggregation_alignment = _validate_aggregation_alignment(
+        aggregation_alignment
+    )
     if frame.empty:
-        return _empty_odb_dataset(source, aggregation_window)
+        return _empty_odb_dataset(
+            source, aggregation_window, aggregation_alignment
+        )
 
     output_variables = list(variables or MARS_OUTPUT_VARIABLES)
     lat_column = _column(frame, ODB_COORD_COLUMNS["latitude"])
@@ -479,6 +539,7 @@ def odb_dataframe_to_xarray(
             working,
             "_weathermart_observation_time",
             aggregation_window,
+            aggregation_alignment,
         )
     elif analysis_times is not None:
         if not isinstance(analysis_times, list | tuple | pd.DatetimeIndex):
@@ -488,18 +549,23 @@ def odb_dataframe_to_xarray(
             "_weathermart_observation_time",
             aggregation_window,
             analysis_times,
+            aggregation_alignment,
         )
     else:
         working["_weathermart_time"] = working["_weathermart_observation_time"]
     if working.empty:
-        return _empty_odb_dataset(source, aggregation_window)
+        return _empty_odb_dataset(
+            source, aggregation_window, aggregation_alignment
+        )
     if (
         aggregation_window is not None
         and analysis_times is None
         and "_weathermart_requested_analysis_time" not in frame
     ):
         working["_weathermart_time"] = _time_window_centers(
-            working["_weathermart_time"], aggregation_window
+            working["_weathermart_time"],
+            aggregation_window,
+            aggregation_alignment,
         )
     working = working.sort_values(["_weathermart_time", lat_column, lon_column])
     working["_weathermart_cell"] = working.groupby("_weathermart_time").cumcount()
@@ -548,6 +614,7 @@ def odb_dataframe_to_xarray(
             "aggregation_window": ""
             if aggregation_window is None
             else aggregation_window,
+            "aggregation_alignment": aggregation_alignment,
             "missing_odb_variables": ",".join(missing_variables),
             "reportype_platform_map": repr(
                 {
@@ -574,6 +641,7 @@ def read_odb_to_xarray(
     source: str = "MARS_ODB",
     aggregation_window: str | None = "3h",
     analysis_times: list[Any] | tuple[Any, ...] | pd.DatetimeIndex | None = None,
+    aggregation_alignment: str = "center",
 ) -> xr.Dataset:
     try:
         import pyodc
@@ -585,7 +653,7 @@ def read_odb_to_xarray(
 
     valid_paths = [Path(path) for path in paths if Path(path).stat().st_size > 0]
     empty_paths = [str(path) for path in paths if Path(path).stat().st_size == 0]
-    analysis_time_by_path = {}
+    analysis_time_by_path: dict[Path, Any] = {}
     if analysis_times is not None:
         if len(analysis_times) != len(paths):
             raise ValueError("analysis_times must have the same length as paths")
@@ -599,7 +667,22 @@ def read_odb_to_xarray(
         analysis_time = analysis_time_by_path.get(path)
         if analysis_time is not None and not frame.empty:
             frame = frame.copy()
-            frame["_weathermart_requested_analysis_time"] = analysis_time
+            if isinstance(analysis_time, list | tuple | pd.DatetimeIndex | np.ndarray):
+                observation_time_column = "_weathermart_observation_time"
+                frame[observation_time_column] = _odb_datetimes(frame)
+                frame = _assign_requested_analysis_times(
+                    frame,
+                    observation_time_column,
+                    aggregation_window,
+                    analysis_time,
+                    aggregation_alignment,
+                )
+                frame["_weathermart_requested_analysis_time"] = frame.pop(
+                    "_weathermart_time"
+                )
+                frame = frame.drop(columns=[observation_time_column])
+            else:
+                frame["_weathermart_requested_analysis_time"] = analysis_time
         frames.append(frame)
     frame = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
     ds = odb_dataframe_to_xarray(
@@ -608,6 +691,7 @@ def read_odb_to_xarray(
         source=source,
         aggregation_window=aggregation_window,
         analysis_times=None,
+        aggregation_alignment=aggregation_alignment,
     )
     ds.attrs["empty_odb_files"] = ",".join(empty_paths)
     return ds
@@ -986,7 +1070,7 @@ class MarsODBRetriever(MarsRetriever):
         expver: str = "1",
         odb_type: str = "OFB",
         format_: str = "odb",
-        time: str | None = None,
+        time: str | list[str] | tuple[str, ...] | None = None,
         domain_filter: str = POLAR_DOMAIN_FILTER,
         odb_columns: list[str] | tuple[str, ...] | None = None,
     ) -> str:
@@ -997,6 +1081,7 @@ class MarsODBRetriever(MarsRetriever):
 
         columns = ", ".join(odb_columns or DEFAULT_ODB_COLUMNS)
         request_time = time or f"{pd.to_datetime(date):%H}"
+        request_time_text = _format_mars_value("time", request_time)
         filters = [f"({domain_filter})"]
         filter_text = " and ".join(filters)
         reportype_str = _format_reportypes(reportypes)
@@ -1008,7 +1093,7 @@ class MarsODBRetriever(MarsRetriever):
             f"    TYPE={odb_type},",
             f"    FORMAT={format_},",
             f"    DATE={date:%Y%m%d},",
-            f"    TIME={request_time},",
+            f"    TIME={request_time_text},",
         ]
         if reportype_str:
             lines.append(f"    REPORTYPE={reportype_str},")
@@ -1045,6 +1130,9 @@ class MarsODBRetriever(MarsRetriever):
         read_odb: bool = True,
         instruments: list[str] | str | None = None,
         aggregation_window: str | None = "3h",
+        aggregation_alignment: str = "center",
+        bin_by_observation_time: bool = False,
+        batch_by_day: bool = False,
     ) -> xr.Dataset:
         dates, variables = checktype(dates, variables)
         output_variables, selected_instruments = _split_requested_variables(
@@ -1058,52 +1146,91 @@ class MarsODBRetriever(MarsRetriever):
 
         rows: list[dict[str, Any]] = []
         targets: list[Path] = []
-        target_analysis_times: list[pd.Timestamp] = []
-        for date in dates:
-            analysis_time = pd.to_datetime(date)
-            cycle = f"{analysis_time:%Y%m%d%H}"
-            for channel_group in selected_instruments:
+        target_analysis_times: list[Any] = []
+
+        if batch_by_day:
+            dates_by_day: dict[pd.Timestamp, list[pd.Timestamp]] = {}
+            for date in dates:
+                analysis_time = pd.to_datetime(date)
+                dates_by_day.setdefault(analysis_time.normalize(), []).append(
+                    analysis_time
+                )
+            request_groups: list[tuple[pd.Timestamp, list[str], list[pd.Timestamp]]] = [
+                (day, selected_instruments, sorted(day_dates))
+                for day, day_dates in sorted(dates_by_day.items())
+            ]
+        else:
+            request_groups = [
+                (pd.to_datetime(date), [channel_group], [pd.to_datetime(date)])
+                for date in dates
+                for channel_group in selected_instruments
+            ]
+
+        for analysis_time, request_instruments, request_times in request_groups:
+            if batch_by_day:
+                cycle = f"{analysis_time:%Y%m%d}"
+                safe_channel_group = "all-radiances"
+                combined_reportypes: list[Any] = []
+                for instrument in request_instruments:
+                    resolved = _resolve_reportypes(instrument, reportypes)
+                    if isinstance(resolved, str | int | np.integer):
+                        resolved = [resolved]
+                    combined_reportypes.extend(resolved or [])
+                request_reportypes = list(dict.fromkeys(combined_reportypes))
+                request_time: str | list[str] = [
+                    f"{requested_time:%H}" for requested_time in request_times
+                ]
+                channel_group = request_instruments[0]
+                row_channel_group = ",".join(request_instruments)
+            else:
+                cycle = f"{analysis_time:%Y%m%d%H}"
+                channel_group = request_instruments[0]
                 safe_channel_group = channel_group.lower().replace("/", "_")
-                target = out_dir / f"{safe_channel_group}_{cycle}.odb"
-                request_file = out_dir / f"{safe_channel_group}_{cycle}.inp"
                 request_reportypes = _resolve_reportypes(channel_group, reportypes)
-                request_text = self.build_request_text(
-                    date=analysis_time,
-                    target=target,
-                    channel_group=channel_group,
-                    reportypes=request_reportypes,
-                    stream=stream,
-                    class_=class_,
-                    expver=expver,
-                    odb_type=odb_type,
-                    format_=format_,
-                    time=time,
-                    domain_filter=domain_filter,
-                    odb_columns=odb_columns,
+                request_time = time
+                row_channel_group = channel_group
+
+            target = out_dir / f"{safe_channel_group}_{cycle}.odb"
+            request_file = out_dir / f"{safe_channel_group}_{cycle}.inp"
+            request_text = self.build_request_text(
+                date=analysis_time,
+                target=target,
+                channel_group=channel_group,
+                reportypes=request_reportypes,
+                stream=stream,
+                class_=class_,
+                expver=expver,
+                odb_type=odb_type,
+                format_=format_,
+                time=request_time,
+                domain_filter=domain_filter,
+                odb_columns=odb_columns,
+            )
+            request_file.write_text(request_text, encoding="utf-8")
+            if submit:
+                _run_mars_request(
+                    request_file,
+                    mars_executable=mars_executable,
+                    mars_timeout=mars_timeout,
+                    rc_credential_path=rc_credential_path,
+                    mars_max_queued_requests=mars_max_queued_requests,
+                    mars_queue_poll_seconds=mars_queue_poll_seconds,
+                    mars_queue_wait_timeout=mars_queue_wait_timeout,
                 )
-                request_file.write_text(request_text, encoding="utf-8")
-                if submit:
-                    _run_mars_request(
-                        request_file,
-                        mars_executable=mars_executable,
-                        mars_timeout=mars_timeout,
-                        rc_credential_path=rc_credential_path,
-                        mars_max_queued_requests=mars_max_queued_requests,
-                        mars_queue_poll_seconds=mars_queue_poll_seconds,
-                        mars_queue_wait_timeout=mars_queue_wait_timeout,
-                    )
-                    targets.append(target)
-                    target_analysis_times.append(analysis_time)
-                rows.append(
-                    {
-                        "time": analysis_time,
-                        "channel_group": channel_group,
-                        "target": str(target),
-                        "request_file": str(request_file),
-                        "submitted": int(submit),
-                        "reportypes": _format_reportypes(request_reportypes) or "",
-                    }
+                targets.append(target)
+                target_analysis_times.append(
+                    request_times if batch_by_day else analysis_time
                 )
+            rows.append(
+                {
+                    "time": analysis_time,
+                    "channel_group": row_channel_group,
+                    "target": str(target),
+                    "request_file": str(request_file),
+                    "submitted": int(submit),
+                    "reportypes": _format_reportypes(request_reportypes) or "",
+                }
+            )
 
         if not rows:
             return xr.Dataset()
@@ -1114,7 +1241,10 @@ class MarsODBRetriever(MarsRetriever):
                 output_variables,
                 source=source,
                 aggregation_window=aggregation_window,
-                analysis_times=target_analysis_times,
+                analysis_times=(
+                    None if bin_by_observation_time else target_analysis_times
+                ),
+                aggregation_alignment=aggregation_alignment,
             )
             ds.attrs.update(
                 {

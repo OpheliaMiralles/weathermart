@@ -48,3 +48,4 @@ iasi_all.py
 .codex
 .ruff_cache
 .uv-cache
+/scripts/

@@ -512,6 +512,20 @@ def _iasi_giadr_scale_factors(
     )
 
 
+def _iasi_valid_mdr_indices(
+    coda_module: Any, coda_file: Any, n_mdr: int
+) -> list[int]:
+    """Return real IASI scanline indices, excluding EPS dummy MDR records."""
+    return [
+        index
+        for index in range(n_mdr)
+        if coda_module.Cursor(
+            coda_file, f"/MDR[{index}]/MDR"
+        ).type_class
+        != "special"
+    ]
+
+
 def _flatten_non_time_dims_to_cell(
     array: xr.DataArray,
     *,
@@ -773,7 +787,6 @@ def _ascat_winds_to_cell(
         raise KeyError("ASCAT raw swath requires lon/lat variables")
 
     lon = ds["lon"]
-    lat = ds["lat"]
     if float(lon.max(skipna=True)) > 180:
         lon = ((lon + 180) % 360) - 180
         ds = ds.assign(lon=lon)
@@ -866,6 +879,14 @@ def _aggregate_cell_observation_granules(
     out = xr.concat(groups, dim="time", join="outer")
     out.attrs.update(datasets[0].attrs)
     return out
+
+
+def _align_cell_observation_times(
+    ds: xr.Dataset, dates: list[Any]
+) -> xr.Dataset:
+    """Align ragged observations to every requested time, including gaps."""
+    requested_times = pd.DatetimeIndex(pd.to_datetime(dates)).tz_localize(None)
+    return ds.reindex(time=requested_times)
 
 
 def _encode_satellite_attr_value(value: Any) -> Any:
@@ -1393,14 +1414,16 @@ class EumetsatRetriever(BaseRetriever):
         ds = ds.assign_attrs(metadata)
         if aggregate_time:
             if cell_observations_aggregated:
-                ds = ds.sel(time=dates)
+                ds = _align_cell_observation_times(ds, dates)
             elif (
                 _is_cell_observation_dataset(ds)
             ):
                 ds = ds.assign_coords(
                     time=_time_window_centers(ds["time"].values, aggregation_window)
                 )
-                ds = _concat_cell_observations_by_time(ds).sel(time=dates)
+                ds = _align_cell_observation_times(
+                    _concat_cell_observations_by_time(ds), dates
+                )
             else:
                 ds = ds.assign_coords(
                     time=_time_window_centers(ds["time"].values, aggregation_window)
@@ -1610,14 +1633,33 @@ def iasi_metop_to_xarray(
     n_mdr = len(coda.fetch(coda_file, "/MDR"))
     if n_mdr == 0:
         raise ValueError(f"No MDR records found in {eps_file}")
-    first_spectrum = _fetch_coda_int16_array(coda, coda_file, "/MDR[0]/MDR/GS1cSpect")
+    # EPS products may interleave dummy/no-data MDR entries with real
+    # scanlines. HARP's IASI ingestion filters these union records before
+    # reading fields; CODA exposes a dummy entry as a special type.
+    valid_mdr_indices = _iasi_valid_mdr_indices(coda, coda_file, n_mdr)
+    if not valid_mdr_indices:
+        raise ValueError(f"No valid MDR scanlines found in {eps_file}")
+    if len(valid_mdr_indices) != n_mdr:
+        logger.debug(
+            "Skipping %d dummy IASI MDR records in %s",
+            n_mdr - len(valid_mdr_indices),
+            eps_file,
+        )
+    first_base = f"/MDR[{valid_mdr_indices[0]}]/MDR"
+    first_spectrum = _fetch_coda_int16_array(
+        coda, coda_file, first_base + "/GS1cSpect"
+    )
     n_chan = first_spectrum.shape[-1]
-    first_native_channel = int(coda.fetch(coda_file, "/MDR[0]/MDR/IDefNsfirst1b"))
+    first_native_channel = int(
+        coda.fetch(coda_file, first_base + "/IDefNsfirst1b")
+    )
     last_native_channel = first_native_channel + n_chan - 1
-    wn_step = float(coda.fetch(coda_file, "/MDR[0]/MDR/IDefSpectDWn1b"))
+    wn_step = float(coda.fetch(coda_file, first_base + "/IDefSpectDWn1b"))
     native_channels = np.arange(first_native_channel, last_native_channel + 1)
     wn = wn_step * native_channels
-    t_eps = np.median(np.asarray(coda.fetch(coda_file, "/MDR[0]/MDR/OnboardUTC")))
+    t_eps = np.median(
+        np.asarray(coda.fetch(coda_file, first_base + "/OnboardUTC"))
+    )
     epoch = datetime.datetime(2000, 1, 1, tzinfo=datetime.UTC)
     times = epoch + datetime.timedelta(seconds=t_eps)
     channel_indices = {
@@ -1645,7 +1687,7 @@ def iasi_metop_to_xarray(
         list(native_channel_by_name.values()),
     )
     channels_out = {name: [] for name in channel_indices}
-    for i in range(n_mdr):
+    for i in valid_mdr_indices:
         base = f"/MDR[{i}]/MDR"
         mdr_first_channel = int(coda.fetch(coda_file, base + "/IDefNsfirst1b"))
         if mdr_first_channel != first_native_channel:

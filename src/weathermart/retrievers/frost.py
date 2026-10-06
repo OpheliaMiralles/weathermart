@@ -3,6 +3,7 @@ import io
 import json
 import logging
 import os
+import time
 from pathlib import Path
 from typing import Any
 
@@ -27,7 +28,19 @@ lightning_vars = [
     "lightning_cloud_to_ground",
     "lightning_intracloud",
 ]
-frost_vars = list(dict.fromkeys(frost_vars + lightning_vars))
+FROST_BASE_OBSERVATION_VARIABLES = [
+    "air_temperature",
+    "relative_humidity",
+    # These canonical Frost elements collide with variables from other
+    # retrievers in variable_metadata.csv and can therefore be absent from the
+    # de-duplicated Frost metadata subset.  Keep them explicitly available for
+    # OBSERVATIONS requests.
+    "surface_air_pressure",
+    "wind_speed",
+]
+frost_vars = list(
+    dict.fromkeys(frost_vars + FROST_BASE_OBSERVATION_VARIABLES + lightning_vars)
+)
 
 LIGHTNING_COLUMNS = [
     "year",
@@ -285,13 +298,88 @@ class FrostRetriever(BaseRetriever):
         )
         with httpx.Client(
             verify=CA_BUNDLE,
-            timeout=None,
+            timeout=httpx.Timeout(120.0, connect=30.0),
             auth=(client_id, client_secret),
         ) as client:
-            resp = client.get(url, params=args)
+            for attempt in range(6):
+                try:
+                    resp = client.get(url, params=args)
+                except httpx.TransportError as error:
+                    if attempt == 5:
+                        raise
+                    delay = min(2**attempt, 60)
+                    logging.warning(
+                        "Frost request failed (%s); retrying in %.1f seconds",
+                        error,
+                        delay,
+                    )
+                    time.sleep(delay)
+                    continue
+                if resp.status_code not in {429, 503}:
+                    resp.raise_for_status()
+                    return resp
+                if attempt == 5:
+                    resp.raise_for_status()
+                retry_after = resp.headers.get("Retry-After")
+                delay = float(retry_after) if retry_after else min(2**attempt, 60)
+                logging.warning(
+                    "Frost returned HTTP %s; retrying in %.1f seconds",
+                    resp.status_code,
+                    delay,
+                )
+                time.sleep(delay)
 
-        resp.raise_for_status()
-        return resp
+        raise RuntimeError("Frost request retry loop ended unexpectedly")
+
+    @staticmethod
+    def _request_observation_batch(
+        *,
+        endpoint: str,
+        client_id: str,
+        client_secret: str,
+        stations: list[str],
+        query_args: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        """Request observations, splitting batches rejected as too large.
+
+        FROST occasionally returns HTTP 412 for a 100-station request when the
+        resulting observation payload is too large.  Retrying the same URL does
+        not help, so bisect the station list until each request is accepted.
+        """
+        args = dict(query_args)
+        args["sources"] = ",".join(stations)
+        try:
+            response = FrostRetriever.request_from_frost(
+                endpoint=endpoint,
+                client_id=client_id,
+                client_secret=client_secret,
+                args=args,
+            )
+        except httpx.HTTPStatusError as error:
+            if error.response.status_code != 412 or len(stations) == 1:
+                raise
+            midpoint = len(stations) // 2
+            logging.warning(
+                "Frost rejected a %s-station observation batch with HTTP 412; "
+                "retrying as batches of %s and %s stations",
+                len(stations),
+                midpoint,
+                len(stations) - midpoint,
+            )
+            return FrostRetriever._request_observation_batch(
+                endpoint=endpoint,
+                client_id=client_id,
+                client_secret=client_secret,
+                stations=stations[:midpoint],
+                query_args=query_args,
+            ) + FrostRetriever._request_observation_batch(
+                endpoint=endpoint,
+                client_id=client_id,
+                client_secret=client_secret,
+                stations=stations[midpoint:],
+                query_args=query_args,
+            )
+        return response.json()["data"]
 
     @staticmethod
     def _load_credentials(
@@ -333,13 +421,30 @@ class FrostRetriever(BaseRetriever):
         latitude_range: tuple[float, float] = NORDIC_DOMAIN[2:],
         stations: list[str] | None = None,
     ) -> gpd.GeoDataFrame:
-        resp = FrostRetriever.request_from_frost(
-            endpoint="sources",
-            client_id=client_id,
-            client_secret=client_secret,
-            args={"ids": ",".join(stations) if stations is not None else None},
-        ).json()
-        geodf = frost_locations_to_gdf(resp.get("data", []))
+        responses = []
+        station_batches = (
+            list(batched(dict.fromkeys(stations), 100))
+            if stations is not None
+            else [None]
+        )
+        for station_batch in station_batches:
+            args = {"types": "SensorSystem"}
+            if station_batch is not None:
+                args["ids"] = ",".join(station_batch)
+            resp = FrostRetriever.request_from_frost(
+                endpoint="sources",
+                client_id=client_id,
+                client_secret=client_secret,
+                args=args,
+            ).json()
+            responses.extend(resp.get("data", []))
+        geodf = frost_locations_to_gdf(responses)
+        if geodf.empty:
+            return gpd.GeoDataFrame(
+                columns=["id", "stationName", "x", "y", "geometry"],
+                geometry="geometry",
+                crs="EPSG:4326",
+            )
         geodf = (
             geodf.rename(columns={"shortName": "stationName"})
             .assign(x=lambda x: x.geometry.x)
@@ -548,6 +653,9 @@ class FrostRetriever(BaseRetriever):
         template_path: os.PathLike[str] | str | None = None,
         template_crs: str | None = None,
         geometry: str | None = None,
+        timeresolutions: str | None = None,
+        timeoffsets: str | None = None,
+        levels: str | None = None,
     ) -> xr.Dataset:
         """
         Retrieve data from the frost service for specified parameters.
@@ -575,6 +683,12 @@ class FrostRetriever(BaseRetriever):
             Longitude range for filtering stations. Default is (0.5, 16.5).
         latitude_range : tuple of float, optional
             Latitude range for filtering stations. Default is (43.0, 50.0).
+        timeresolutions : str, optional
+            Frost time-resolution filter, for example ``"PT1H"``.
+        timeoffsets : str, optional
+            Frost time-offset filter, for example ``"default"``.
+        levels : str, optional
+            Frost sensor-level filter, for example ``"default"``.
 
         Returns
         -------
@@ -618,6 +732,30 @@ class FrostRetriever(BaseRetriever):
             isodates = [pd.to_datetime(d).strftime("%Y-%m-%dT%H:%M:%S") for d in dates]
             start, stop = isodates[0], isodates[-1]
         timerange = "/".join([start, stop])
+        series_args = {
+            "elements": ",".join(variables),
+            "referencetime": timerange,
+            "timeresolutions": timeresolutions,
+            "timeoffsets": timeoffsets,
+            "levels": levels,
+        }
+        available_series = FrostRetriever.request_from_frost(
+            endpoint="observations/availableTimeSeries",
+            client_id=client_id,
+            client_secret=client_secret,
+            args=series_args,
+        ).json()["data"]
+        avail_for_date = list(
+            dict.fromkeys(
+                str(item["sourceId"]).split(":", 1)[0]
+                for item in available_series
+            )
+        )
+        if stations is None:
+            stations = avail_for_date
+        else:
+            available_set = set(avail_for_date)
+            stations = [station for station in stations if station in available_set]
         coords_station_df = FrostRetriever.get_stations(
             client_id=client_id,
             client_secret=client_secret,
@@ -626,42 +764,40 @@ class FrostRetriever(BaseRetriever):
             stations=stations,
         )
         stations = coords_station_df["id"].tolist()
-        avail_for_date = [
-            v["sourceId"].replace(":0", "")
-            for v in FrostRetriever.request_from_frost(
-                endpoint="observations/availableTimeSeries",
-                client_id=client_id,
-                client_secret=client_secret,
-                args={
-                    "elements": ",".join(variables),
-                    "referencetime": timerange,
-                },
-            ).json()["data"]
-        ]
+        if not stations:
+            raise RuntimeError(
+                f"No Frost stations have {variables} in {timerange} "
+                "for the requested filters"
+            )
         to_concat = []
         i = 0
-        batches = batched(stations, 500)
-        nr_batches = len(list(batched(stations, 500)))
+        batches = batched(stations, 100)
+        nr_batches = len(list(batched(stations, 100)))
         for s_slice in batches:
             logging.info(
-                "Retrieving data for batch %s/%s of 500 stations", i, nr_batches
+                "Retrieving data for batch %s/%s of 100 stations", i, nr_batches
             )
 
             s_slice = [s for s in s_slice if s in avail_for_date]
+            if not s_slice:
+                continue
             query_args = {
-                "sources": ",".join(s_slice),
                 "elements": ",".join(variables),
                 "referencetime": timerange,
+                "timeresolutions": timeresolutions,
+                "timeoffsets": timeoffsets,
+                "levels": levels,
             }
-            df = FrostRetriever.request_from_frost(
+            df = FrostRetriever._request_observation_batch(
                 endpoint=source.lower(),
                 client_id=client_id,
                 client_secret=client_secret,
-                args=query_args,
-            ).json()["data"]
+                stations=s_slice,
+                query_args=query_args,
+            )
             geodf = frost_observations_to_dataframe(df)
             if len(geodf) == 0:
-                logging.warning("No data available for batch %s of 500 stations", i)
+                logging.warning("No data available for batch %s of 100 stations", i)
             else:
                 geodf = geodf.merge(
                     coords_station_df, on="id", how="left"
@@ -673,6 +809,10 @@ class FrostRetriever(BaseRetriever):
                 geodf.index = geodf.index.tz_convert("UTC").tz_localize(None)
                 to_concat.append(geodf)
             i += 1
+        if not to_concat:
+            raise RuntimeError(
+                f"Frost returned no observations for {variables} in {timerange}"
+            )
         geodf = (
             pd.concat(to_concat)
             .set_geometry("geometry")

@@ -180,6 +180,33 @@ def test_mars_retriever_writes_request_files(tmp_path: Path) -> None:
     assert target_file.name.startswith("amsu-a_20200101")
 
 
+def test_mars_retriever_can_batch_daily_times_and_instruments(
+    tmp_path: Path,
+) -> None:
+    retriever = MarsODBRetriever()
+    dates = pd.date_range("2024-02-06", periods=8, freq="3h").tolist()
+
+    ds = retriever.retrieve(
+        source="MARS_ODB",
+        variables=["brightness_temperature"],
+        instruments=["AMSU-A", "ATMS"],
+        dates=dates,
+        output_dir=tmp_path,
+        submit=False,
+        batch_by_day=True,
+    )
+
+    assert ds.sizes["request"] == 1
+    request_file = Path(ds["request_file"].isel(request=0).item())
+    request_text = request_file.read_text(encoding="utf-8")
+    assert "TIME=00/03/06/09/12/15/18/21" in request_text
+    assert (
+        "REPORTYPE=21001/21002/21003/21004/21005/21007/21008/21009/21010/"
+        "34001/34002/34003" in request_text
+    )
+    assert request_file.name == "all-radiances_20240206.inp"
+
+
 def test_mars_retriever_passes_rc_credential_path(tmp_path: Path, monkeypatch) -> None:
     calls = []
 
@@ -277,6 +304,72 @@ def test_odb_dataframe_to_xarray_filters_to_requested_analysis_window() -> None:
     assert set(ds["channel"].isel(time=0).values.tolist()) == {5.0, 6.0}
 
 
+def test_odb_dataframe_to_xarray_uses_past_only_three_hour_windows() -> None:
+    frame = pd.DataFrame(
+        {
+            "date@hdr": [
+                20191231,
+                20200101,
+                20200101,
+                20200101,
+                20200101,
+            ],
+            "time@hdr": [230000, 0, 10000, 30000, 30001],
+            "lat@hdr": [70.0, 71.0, 72.0, 73.0, 74.0],
+            "lon@hdr": [10.0, 11.0, 12.0, 13.0, 14.0],
+            "obsvalue@body": [250.0, 251.0, 252.0, 253.0, 254.0],
+        }
+    )
+
+    ds = odb_dataframe_to_xarray(
+        frame,
+        ["brightness_temperature"],
+        aggregation_window="3h",
+        aggregation_alignment="past",
+    )
+
+    assert list(pd.to_datetime(ds["time"].values)) == [
+        pd.Timestamp("2020-01-01T00:00:00"),
+        pd.Timestamp("2020-01-01T03:00:00"),
+        pd.Timestamp("2020-01-01T06:00:00"),
+    ]
+    assert ds["brightness_temperature"].count("cell").values.tolist() == [2, 2, 1]
+    assert set(
+        ds["brightness_temperature"].isel(time=0).dropna("cell").values.tolist()
+    ) == {250.0, 251.0}
+    assert set(
+        ds["brightness_temperature"].isel(time=1).dropna("cell").values.tolist()
+    ) == {252.0, 253.0}
+
+
+def test_odb_dataframe_to_xarray_filters_requested_past_only_window() -> None:
+    frame = pd.DataFrame(
+        {
+            "date@hdr": [20200101, 20200101, 20200101, 20200101],
+            "time@hdr": [25959, 30000, 55959, 60000],
+            "lat@hdr": [70.0, 71.0, 72.0, 73.0],
+            "lon@hdr": [10.0, 11.0, 12.0, 13.0],
+            "obsvalue@body": [250.0, 251.0, 252.0, 253.0],
+        }
+    )
+
+    ds = odb_dataframe_to_xarray(
+        frame,
+        ["brightness_temperature"],
+        aggregation_window="3h",
+        analysis_times=[pd.Timestamp("2020-01-01T06:00:00")],
+        aggregation_alignment="past",
+    )
+
+    assert ds.sizes["time"] == 1
+    assert pd.Timestamp(ds["time"].item()) == pd.Timestamp(
+        "2020-01-01T06:00:00"
+    )
+    assert set(
+        ds["brightness_temperature"].isel(time=0).dropna("cell").values.tolist()
+    ) == {252.0, 253.0}
+
+
 def test_read_odb_to_xarray_skips_empty_files(tmp_path: Path, monkeypatch) -> None:
     valid_file = tmp_path / "valid.odb"
     empty_file = tmp_path / "empty.odb"
@@ -349,3 +442,49 @@ def test_read_odb_to_xarray_filters_each_file_to_its_analysis_time(
     assert pd.Timestamp(ds["time"].item()) == pd.Timestamp("2024-02-06T00:00:00")
     assert ds.sizes["cell"] == 1
     assert float(ds["brightness_temperature"].isel(time=0, cell=0)) == 251.0
+
+
+def test_read_odb_to_xarray_assigns_multiple_analysis_times_per_file(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    valid_file = tmp_path / "daily.odb"
+    valid_file.write_bytes(b"odb")
+
+    def fake_read_odb(path, single):
+        assert Path(path) == valid_file
+        assert single is True
+        return pd.DataFrame(
+            {
+                "date@hdr": [20240206, 20240206, 20240206],
+                "time@hdr": [10000, 20000, 44500],
+                "lat@hdr": [21.0, 22.0, 23.0],
+                "lon@hdr": [10.0, 11.0, 12.0],
+                "obsvalue@body": [251.0, 252.0, 253.0],
+            }
+        )
+
+    monkeypatch.setitem(
+        sys.modules,
+        "pyodc",
+        types.SimpleNamespace(read_odb=fake_read_odb),
+    )
+
+    ds = read_odb_to_xarray(
+        [valid_file],
+        ["brightness_temperature"],
+        aggregation_window="3h",
+        analysis_times=[
+            [
+                pd.Timestamp("2024-02-06T00:00:00"),
+                pd.Timestamp("2024-02-06T03:00:00"),
+            ]
+        ],
+    )
+
+    assert ds.sizes["time"] == 2
+    assert list(pd.to_datetime(ds["time"].values)) == [
+        pd.Timestamp("2024-02-06T00:00:00"),
+        pd.Timestamp("2024-02-06T03:00:00"),
+    ]
+    assert ds["brightness_temperature"].count("cell").values.tolist() == [1, 1]
