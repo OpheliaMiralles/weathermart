@@ -1,3 +1,4 @@
+import argparse
 import datetime
 import json
 import logging
@@ -573,6 +574,21 @@ class NordicRadarRetriever(BaseRetriever):
     RAINBOW_COLUMN_PRODUCT_TEMPLATE = (
         "/lustre/storeB/users/opmir9231/rainbow_column_products_template.zarr"
     )
+    RAINBOW_LIVE_RADARS = (
+        "AND",
+        "BER",
+        "BML",
+        "HAS",
+        "HFJ",
+        "HGB",
+        "HUR",
+        "NOX",
+        "RSA",
+        "RSG",
+        "RST",
+        "SMN",
+        "STA",
+    )
     POSTPROCESSED_ROOT = "/lustre/storeB/users/opmir9231/nordic_radar_postprocessed"
     crs = {
         "lcc": "+proj=lcc +lat_0=63.3 +lon_0=15 \
@@ -796,6 +812,130 @@ class NordicRadarRetriever(BaseRetriever):
         )
         ds.attrs["rainbow_column_product_file"] = str(path)
         return _ensure_time_coord_metadata(ds)
+
+    def open_live_rainbow_volumes(
+        self,
+        spool_root: os.PathLike[str],
+        dates: list[Any] | pd.DatetimeIndex,
+        variables: list[str] | None = None,
+        *,
+        require_complete: bool = True,
+    ) -> xr.Dataset:
+        """Derive model-ready Rainbow fields from a datacopier spool."""
+        from weathermart.archive import (
+            extract_rainbow_column_products_daily_zarr as extractor,
+        )
+
+        requested = pd.DatetimeIndex(dates)
+        if requested.tz is None:
+            requested = requested.tz_localize("UTC")
+        else:
+            requested = requested.tz_convert("UTC")
+        requested = requested.sort_values()
+        if requested.empty:
+            raise ValueError("At least one Rainbow time is required")
+
+        variables = variables or list(self.rainbow_column_products)
+        invalid = sorted(set(variables) - set(self.rainbow_column_products))
+        if invalid:
+            raise ValueError(f"Not Rainbow column products: {invalid}")
+
+        spool_root = pathlib.Path(spool_root)
+        if not spool_root.is_dir():
+            raise FileNotFoundError(f"Rainbow datacopier spool not found: {spool_root}")
+        files_by_radar = extractor.live_files_by_radar(
+            spool_root,
+            requested[0],
+            requested[-1],
+            "5min",
+        )
+        if not files_by_radar:
+            raise FileNotFoundError(
+                f"No datacopier dBZ volumes found in {spool_root} for {requested}"
+            )
+
+        configured_radars = os.environ.get("RAINBOW_LIVE_RADARS")
+        expected_radars = (
+            tuple(
+                radar.strip().upper()
+                for radar in configured_radars.split(",")
+                if radar.strip()
+            )
+            if configured_radars
+            else self.RAINBOW_LIVE_RADARS
+        )
+
+        requested_set = set(requested)
+        if require_complete:
+            missing_radars = sorted(set(expected_radars) - set(files_by_radar))
+            if missing_radars:
+                raise FileNotFoundError(
+                    "Rainbow datacopier spool is missing radars: "
+                    + ",".join(missing_radars)
+                )
+
+        extraction_args = argparse.Namespace(
+            azimuth_step_deg=1.0,
+            range_step_m=1000.0,
+            max_range_m=240000.0,
+            round_time="5min",
+            max_times_per_radar=0,
+            min_vpr_dbz=5.0,
+            vpr_bin_m=500.0,
+            vpr_reference_height_m=1000.0,
+            max_vpr_correction_db=10.0,
+            z_r_a=200.0,
+            z_r_b=1.6,
+            continue_on_error=False,
+        )
+        grid = extractor.make_target_grid(extraction_args)
+        radar_datasets = []
+        source_files: dict[str, list[str]] = {}
+        radars_to_process = expected_radars if require_complete else files_by_radar
+        for radar in radars_to_process:
+            files = files_by_radar[radar]
+            selected = [(time, path) for time, path in files if time in requested_set]
+            selected_times = {time for time, _ in selected}
+            if require_complete and selected_times != requested_set:
+                missing_times = sorted(requested_set - selected_times)
+                raise FileNotFoundError(
+                    f"Rainbow datacopier spool is missing {radar} times: "
+                    + ",".join(time.strftime("%Y-%m-%dT%H:%M:%SZ") for time in missing_times)
+                )
+            if not selected:
+                continue
+            radar_dataset = extractor.process_radar_files(
+                radar,
+                selected,
+                grid,
+                tuple(variables),
+                extraction_args,
+            )
+            if radar_dataset is not None:
+                radar_datasets.append(radar_dataset)
+                source_files[radar] = [path.name for _, path in selected]
+
+        if not radar_datasets:
+            raise RuntimeError("No live Rainbow radar datasets were produced")
+        dataset = xr.concat(
+            radar_datasets,
+            dim="cell",
+            join="outer",
+            compat="no_conflicts",
+            coords="minimal",
+        )
+        dataset = dataset.assign_coords(
+            cell=np.arange(dataset.sizes["cell"], dtype=np.int64)
+        )
+        dataset = self._align_rainbow_cell_template(dataset)
+        dataset = dataset.transpose("cell", "time", missing_dims="ignore")
+        dataset.attrs.update(
+            source="Rainbow live volumes via zmq-datacopier",
+            rainbow_time_mode="live 5-minute volumes",
+            rainbow_datacopier_spool=str(spool_root),
+            rainbow_source_files=json.dumps(source_files, sort_keys=True),
+        )
+        return _ensure_time_coord_metadata(dataset)
 
     def _open_postprocessed_radar(
         self,

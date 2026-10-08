@@ -21,6 +21,9 @@ ARCHIVE_ROOT = Path("/lustre/arkivB/projects/remotesensing/radar-volumes-rainbow
 NORDIC_RADAR_ROOT = Path("/lustre/storeB/users/opmir9231/nordic_radar")
 OUTPUT_ROOT = Path("/lustre/storeB/users/opmir9231/rainbow_column_products")
 TIME_RE = re.compile(r"^(\d{14})")
+LIVE_TIME_RE = re.compile(
+    r"^(?P<radar>[A-Za-z0-9]+)-(?P<timestamp>\d{14})(?:\d{2})?dBZ\.vol(?:-.+)?$"
+)
 DEFAULT_PRODUCTS = ("czc", "ezc20", "ezc45", "lzc", "hzc")
 ALL_PRODUCTS = ("rzc", "czc", "ezc20", "ezc45", "lzc", "hzc", "beam_height", "radar_altitude")
 GEOD = Geod(ellps="WGS84")
@@ -146,6 +149,36 @@ def files_by_rounded_time(scan_dirs: list[Path], round_time: str, max_times: int
     if max_times > 0:
         items = items[:max_times]
     return items
+
+
+def live_files_by_radar(
+    spool_root: Path,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+    round_time: str,
+) -> dict[str, list[tuple[pd.Timestamp, Path]]]:
+    """Group datacopier Rainbow volumes by radar and rounded scan time."""
+    start = pd.Timestamp(start)
+    end = pd.Timestamp(end)
+    start = start.tz_localize("UTC") if start.tzinfo is None else start.tz_convert("UTC")
+    end = end.tz_localize("UTC") if end.tzinfo is None else end.tz_convert("UTC")
+    grouped: dict[str, dict[pd.Timestamp, Path]] = {}
+    for path in sorted(spool_root.glob("*dBZ.vol*")):
+        match = LIVE_TIME_RE.match(path.name)
+        if match is None:
+            continue
+        timestamp = pd.to_datetime(
+            match.group("timestamp"), format="%Y%m%d%H%M%S", utc=True
+        ).round(round_time)
+        if timestamp < start or timestamp > end:
+            continue
+        grouped.setdefault(match.group("radar").upper(), {}).setdefault(
+            timestamp, path
+        )
+    return {
+        radar: sorted(files.items())
+        for radar, files in sorted(grouped.items())
+    }
 
 
 def beam_height_m(ranges_m: np.ndarray, elevation_deg: float, radar_altitude_m: float) -> np.ndarray:
@@ -351,8 +384,19 @@ def process_radar(
     args: argparse.Namespace,
 ) -> xr.Dataset | None:
     files = files_by_rounded_time(scan_dirs, args.round_time, args.max_times_per_radar)
+    return process_radar_files(radar, files, grid, products_to_write, args)
+
+
+def process_radar_files(
+    radar: str,
+    files: list[tuple[pd.Timestamp, Path]],
+    grid: TargetGrid,
+    products_to_write: tuple[str, ...],
+    args: argparse.Namespace,
+) -> xr.Dataset | None:
+    """Derive column products from an explicit sequence of Rainbow volumes."""
     if not files:
-        print(f"[WARN] {radar}: no dBZ files in selected scan directories", flush=True)
+        print(f"[WARN] {radar}: no dBZ files selected", flush=True)
         return None
 
     times = [timestamp.to_datetime64() for timestamp, _ in files]

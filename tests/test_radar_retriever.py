@@ -1,7 +1,11 @@
+import argparse
+
 import numpy as np
+import pandas as pd
 import pytest
 import xarray as xr
 
+from weathermart.archive import extract_rainbow_column_products_daily_zarr as rainbow
 from weathermart.retrievers.radar import NordicRadarRetriever
 from weathermart.retrievers.radar import read_radar_file_or_raise
 
@@ -96,3 +100,56 @@ def test_retrieve_nowcast_inputs_keeps_native_grids_separate(monkeypatch):
 
     assert radar.sizes == {"time": 1, "Yc": 2, "Xc": 3}
     assert rainbow.sizes == {"time": 1, "cell": 4}
+
+
+def test_live_files_by_radar_reads_datacopier_names(tmp_path):
+    selected = [
+        "NOX-2026100709023300dBZ.vol",
+        "NOX-2026100709073300dBZ.vol",
+        "HUR-2026100709030100dBZ.vol",
+    ]
+    ignored = [
+        "NOX-2026100708523300dBZ.vol",
+        "NOX-2026100709023300KDP.vol",
+        "not-a-rainbow-volume",
+    ]
+    for name in selected + ignored:
+        (tmp_path / name).touch()
+
+    grouped = rainbow.live_files_by_radar(
+        tmp_path,
+        pd.Timestamp("2026-10-07T09:00:00Z"),
+        pd.Timestamp("2026-10-07T09:10:00Z"),
+        "5min",
+    )
+
+    assert list(grouped) == ["HUR", "NOX"]
+    assert [time for time, _ in grouped["NOX"]] == [
+        pd.Timestamp("2026-10-07T09:05:00Z"),
+        pd.Timestamp("2026-10-07T09:10:00Z"),
+    ]
+
+
+def test_process_radar_delegates_explicit_files(monkeypatch, tmp_path):
+    expected = [(pd.Timestamp("2026-10-07T09:00:00Z"), tmp_path / "one.vol")]
+    monkeypatch.setattr(rainbow, "files_by_rounded_time", lambda *args: expected)
+    captured = {}
+
+    def fake_process(radar, files, grid, products, args):
+        captured.update(
+            radar=radar,
+            files=files,
+            grid=grid,
+            products=products,
+            args=args,
+        )
+        return xr.Dataset()
+
+    monkeypatch.setattr(rainbow, "process_radar_files", fake_process)
+    args = argparse.Namespace(round_time="5min", max_times_per_radar=0)
+    grid = rainbow.TargetGrid(np.array([0.0]), np.array([500.0]))
+
+    rainbow.process_radar("NOX", [tmp_path], grid, ("czc",), args)
+
+    assert captured["radar"] == "NOX"
+    assert captured["files"] == expected
