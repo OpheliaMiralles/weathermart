@@ -1026,6 +1026,7 @@ class EumetsatRetriever(BaseRetriever):
         aggregate_time: bool = True,
         aggregation_window: str | None = "3h",
         time_index: str = "granule",
+        stack_radiance_channels: bool = True,
     ) -> xr.Dataset:
         """
         Retrieve EUMETSAT data for specified dates and variables.
@@ -1062,6 +1063,10 @@ class EumetsatRetriever(BaseRetriever):
             If "granule", the time dimension indexes downloaded product files.
             If "scan", supported raw swath readers use scanline observation time as
             the time dimension.
+        stack_radiance_channels : bool, optional
+            If True, represent radiance channels as observations in a shared cell
+            dimension. If False, preserve each requested channel as a separate
+            variable.
         Returns
         -------
         xr.Dataset
@@ -1278,6 +1283,8 @@ class EumetsatRetriever(BaseRetriever):
                                     ds = _ascat_winds_to_cell(ds, satpy_vars, bbox)
                             t = extract_time_flex(Path(f).stem)
                         instrument = RADIANCE_READER_INSTRUMENTS.get(reader)
+                        if not stack_radiance_channels:
+                            instrument = None
                         if instrument is not None:
                             radiance_output_name = (
                                 "wavenumber_radiance"
