@@ -17,8 +17,6 @@ class DummyRetriever(BaseRetriever):
     Retriever that does nothing and does not implement retrieve() and therefore cannot be initialized.
     """
 
-    pass
-
 
 class MockRetriever(BaseRetriever):
     """
